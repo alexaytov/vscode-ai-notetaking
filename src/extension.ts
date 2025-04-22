@@ -76,8 +76,44 @@ async function handleNote(reclassify: boolean) {
     const slug = await generateSlug(openai, model, text);
     const fileName = `${slug}.md`;
 
+    // Allow user to edit tags, path, and filename
+    const editedTagsInput = await vscode.window.showInputBox({
+      prompt: 'Edit tags (comma-separated)',
+      value: tags.join(', ')
+    });
+    if (editedTagsInput === undefined) {
+      vscode.window.showInformationMessage('AI Note Saver: operation cancelled');
+      return;
+    }
+    const finalTags = editedTagsInput.split(',').map(t => t.trim()).filter(t => t);
+
+    // Prompt user for relative path
+    const editedRelPath = await vscode.window.showInputBox({
+      prompt: 'Edit relative path under workspace',
+      value: relPath
+    });
+    if (editedRelPath === undefined) {
+      vscode.window.showInformationMessage('AI Note Saver: operation cancelled');
+      return;
+    }
+    const finalRelPath = editedRelPath.trim();
+
+    // Prompt user for file name
+    const editedFileName = await vscode.window.showInputBox({
+      prompt: 'Edit file name (include .md)',
+      value: fileName
+    });
+    if (editedFileName === undefined) {
+      vscode.window.showInformationMessage('AI Note Saver: operation cancelled');
+      return;
+    }
+    let finalFileName = editedFileName.trim();
+    if (!finalFileName.toLowerCase().endsWith('.md')) {
+      finalFileName += '.md';
+    }
+
     // Move file and insert tags
-    await moveAndTagFile(doc, tags, relPath, targetRoot, fileName, reclassify);
+    await moveAndTagFile(doc, finalTags, finalRelPath, targetRoot, finalFileName, reclassify);
   } catch (err: any) {
     vscode.window.showErrorMessage(`AI Note Saver error: ${err.message}`);
   }
