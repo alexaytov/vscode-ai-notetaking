@@ -63,16 +63,17 @@ async function handleNote(reclassify: boolean) {
     return;
   }
   const doc = editor.document;
-  if (!doc.fileName.endsWith('.md')) {
+  if (doc.languageId !== 'markdown') {
     vscode.window.showWarningMessage('AI Note Saver: Not a Markdown file');
     return;
   }
 
+  // Use in-memory text so it works for unsaved/untitled files
   const text = doc.getText();
   try {
     // Extract tags, path, and filename slug via AI
     const tags = await extractTags(openai, model, text);
-    const relPath = await generateRelPath(openai, model, tags, text);
+    const relPath = await generateRelPath(openai, model, tags, text, targetRoot);
     const slug = await generateSlug(openai, model, text);
     const fileName = `${slug}.md`;
 
@@ -88,15 +89,15 @@ async function handleNote(reclassify: boolean) {
     const finalTags = editedTagsInput.split(',').map(t => t.trim()).filter(t => t);
 
     // Prompt user for relative path
-    const editedRelPath = await vscode.window.showInputBox({
-      prompt: 'Edit relative path under workspace',
-      value: relPath
-    });
-    if (editedRelPath === undefined) {
-      vscode.window.showInformationMessage('AI Note Saver: operation cancelled');
-      return;
-    }
-    const finalRelPath = editedRelPath.trim();
+    // const editedRelPath = await vscode.window.showInputBox({
+    //   prompt: 'Edit relative path under workspace',
+    //   value: relPath
+    // });
+    // if (editedRelPath === undefined) {
+    //   vscode.window.showInformationMessage('AI Note Saver: operation cancelled');
+    //   return;
+    // }
+    // const finalRelPath = editedRelPath.trim();
 
     // Prompt user for file name
     const editedFileName = await vscode.window.showInputBox({
@@ -113,7 +114,7 @@ async function handleNote(reclassify: boolean) {
     }
 
     // Move file and insert tags
-    await moveAndTagFile(doc, finalTags, finalRelPath, targetRoot, finalFileName, reclassify);
+    await moveAndTagFile(doc, finalTags, relPath, targetRoot, finalFileName, reclassify, text);
   } catch (err: any) {
     vscode.window.showErrorMessage(`AI Note Saver error: ${err.message}`);
   }
@@ -130,7 +131,7 @@ async function extractTags(openai: OpenAI, model: string, text: string) {
   const tagResp = await openai.chat.completions.create({
     model,
     messages: [
-      { role: 'system', content: 'Extract 2-5 concise tags (comma-separated) for this note.' },
+      { role: 'system', content: 'Extract 2-3 concise tags (comma-separated) based on the core contents of this node.' },
       { role: 'user', content: text }
     ]
   });
@@ -141,13 +142,34 @@ async function extractTags(openai: OpenAI, model: string, text: string) {
 
 /**
  * Generate a relative path for the given tags and text using the AI model.
+ * Suggests an existing folder if appropriate, or creates a new one if needed.
  * @param openai OpenAI client
  * @param model AI model to use
  * @param tags Tags to use for generating the path
  * @param text Text to use for generating the path
+ * @param targetRoot The root directory under which to categorize notes
  * @returns Relative path
  */
-async function generateRelPath(openai: OpenAI, model: string, tags: string[], text: string) {
+async function generateRelPath(openai: OpenAI, model: string, tags: string[], text: string, targetRoot: string) {
+  // 1. List all subfolders under targetRoot (up to 3 levels)
+  const getAllFolders = async (root: string, depth = 3, prefix = ''): Promise<string[]> => {
+    if (depth === 0) return [];
+    let result: string[] = [];
+    try {
+      const entries = await fs.readdir(path.join(root, prefix), { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const rel = path.join(prefix, entry.name);
+          result.push(rel);
+          result = result.concat(await getAllFolders(root, depth - 1, rel));
+        }
+      }
+    } catch (e) {}
+    return result;
+  };
+  const existingFolders = await getAllFolders(targetRoot);
+
+  // 2. Ask AI for a suggested relative path
   const pathResp = await openai.chat.completions.create({
     model,
     messages: [
@@ -155,9 +177,41 @@ async function generateRelPath(openai: OpenAI, model: string, tags: string[], te
       { role: 'user', content: text }
     ]
   });
-  let relPath = pathResp.choices[0].message!.content!.trim() || '';
-  relPath = relPath.split('/').slice(0, 3).map(seg => seg.replace(/_/g, '-')).join('/');
-  return relPath;
+  let aiPath = pathResp.choices[0].message!.content!.trim() || '';
+  aiPath = aiPath.split('/').slice(0, 3).map(seg => seg.replace(/_/g, '-')).join('/');
+
+  // 3. Find top N (e.g., 3) most similar existing folders
+  const normalize = (s: string) => s.replace(/_/g, '-').toLowerCase();
+  function similarity(a: string, b: string) {
+    // Simple similarity: count of matching segments from start
+    const aSegs = normalize(a).split(path.sep);
+    const bSegs = normalize(b).split(path.sep);
+    let score = 0;
+    for (let i = 0; i < Math.min(aSegs.length, bSegs.length); i++) {
+      if (aSegs[i] === bSegs[i]) score++;
+      else break;
+    }
+    // Prefer longer matches, but penalize for extra segments
+    return score * 2 - Math.abs(aSegs.length - bSegs.length);
+  }
+  const folderScores = existingFolders.map(f => ({ folder: f, score: similarity(f, aiPath) }));
+  folderScores.sort((a, b) => b.score - a.score);
+  const topMatches = folderScores.filter(f => f.score > 0).slice(0, 3);
+
+  // 4. Let user pick: top matches, AI suggestion, or custom
+  let options = [];
+  for (const match of topMatches) {
+    options.push({ label: `Use existing folder: ${match.folder}`, value: match.folder });
+  }
+  options.push({ label: `Create new folder: ${aiPath}`, value: aiPath });
+  options.push({ label: 'Other (specify manually)', value: '__other__' });
+  const picked = await vscode.window.showQuickPick(options, { placeHolder: 'Select a folder to categorize this note' });
+  if (!picked) return aiPath;
+  if (picked.value === '__other__') {
+    const manual = await vscode.window.showInputBox({ prompt: 'Enter relative folder path under workspace', value: aiPath });
+    return manual?.trim() || aiPath;
+  }
+  return picked.value;
 }
 
 /**
@@ -213,13 +267,20 @@ async function generateSlug(openai: OpenAI, model: string, text: string): Promis
  * @param targetRoot Target root directory
  * @param fileName New filename
  * @param reclassify Whether this is a reclassify operation
+ * @param inMemoryText Optional: in-memory text for unsaved/untitled docs
  */
-async function moveAndTagFile(doc: vscode.TextDocument, tags: string[], relPath: string, targetRoot: string, fileName: string, reclassify: boolean) {
+async function moveAndTagFile(doc: vscode.TextDocument, tags: string[], relPath: string, targetRoot: string, fileName: string, reclassify: boolean, inMemoryText?: string) {
   const destDir = path.join(targetRoot, relPath);
   vscode.window.showInformationMessage(`AI Note Saver: generated path: ${destDir}`);
   await fs.mkdir(destDir, { recursive: true });
   const destPath = path.join(destDir, fileName);
-  const origContent = await fs.readFile(doc.fileName, 'utf8');
+  let origContent: string;
+  if (doc.isUntitled && inMemoryText !== undefined) {
+    // Use in-memory content for unsaved/untitled docs
+    origContent = inMemoryText;
+  } else {
+    origContent = await fs.readFile(doc.fileName, 'utf8');
+  }
   let lines = origContent.split(/\r?\n/);
   if (reclassify) {
     // Remove existing Tags lines
@@ -228,16 +289,18 @@ async function moveAndTagFile(doc: vscode.TextDocument, tags: string[], relPath:
   // Inject new Tags after title
   lines = insertTags(lines, tags);
   const newContent = lines.join('\n');
-  if (destPath === doc.fileName) {
-    await fs.writeFile(doc.fileName, newContent, 'utf8');
-    vscode.window.showInformationMessage('AI Note Saver: tags updated in-place');
-  } else {
-    await fs.writeFile(destPath, newContent, 'utf8');
+  await fs.writeFile(destPath, newContent, 'utf8');
+  if (!doc.isUntitled && !doc.isDirty && destPath !== doc.fileName) {
+    // Only close the old tab if the doc is saved and unmodified
     await fs.unlink(doc.fileName);
     await removeEmptyDirsRecursively(path.dirname(doc.fileName));
     await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
     await vscode.window.showTextDocument(vscode.Uri.file(destPath), { preview: false });
     vscode.window.showInformationMessage(`AI Note Saver: reclassified to ${destPath}`);
+  } else {
+    // For untitled/unsaved/dirty docs, just open the new file and leave the old tab open
+    await vscode.window.showTextDocument(vscode.Uri.file(destPath), { preview: false });
+    vscode.window.showInformationMessage(`AI Note Saver: note saved to ${destPath}`);
   }
 }
 
