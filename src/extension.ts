@@ -169,41 +169,24 @@ async function generateRelPath(openai: OpenAI, model: string, tags: string[], te
   };
   const existingFolders = await getAllFolders(targetRoot);
 
-  // 2. Ask AI for a suggested relative path
+  // 2. Ask AI to choose from existing folders, or propose a new one
+  const aiPrompt = `Given the following tags: ${JSON.stringify(tags)}, note content: """${text.substring(0, 500)}""", and these existing folders: [${existingFolders.join(', ')}]. Choose the most appropriate folder from the list for categorizing this note. If none are suitable, propose a new folder path (up to 3 levels deep, using lowercase letters and dashes). Output only the selected path.`;
   const pathResp = await openai.chat.completions.create({
     model,
     messages: [
-      { role: 'system', content: `Given tags ${JSON.stringify(tags)}, output a relative folder path under the workspace root directory. Use only lowercase letters, words separated by dashes for folder names, separated by forward slashes, and at most 3 levels (no more than 2 slashes). Output only the path without any explanation.` },
-      { role: 'user', content: text }
+      { role: 'system', content: aiPrompt }
     ]
   });
   let aiPath = pathResp.choices[0].message!.content!.trim() || '';
-  aiPath = aiPath.split('/').slice(0, 3).map(seg => seg.replace(/_/g, '-')).join('/');
+  aiPath = aiPath.split(/[\n/\\]/).map(seg => seg.replace(/_/g, '-').trim()).filter(Boolean).slice(0, 3).join('/');
 
-  // 3. Find top N (e.g., 3) most similar existing folders
-  const normalize = (s: string) => s.replace(/_/g, '-').toLowerCase();
-  function similarity(a: string, b: string) {
-    // Simple similarity: count of matching segments from start
-    const aSegs = normalize(a).split(path.sep);
-    const bSegs = normalize(b).split(path.sep);
-    let score = 0;
-    for (let i = 0; i < Math.min(aSegs.length, bSegs.length); i++) {
-      if (aSegs[i] === bSegs[i]) score++;
-      else break;
-    }
-    // Prefer longer matches, but penalize for extra segments
-    return score * 2 - Math.abs(aSegs.length - bSegs.length);
-  }
-  const folderScores = existingFolders.map(f => ({ folder: f, score: similarity(f, aiPath) }));
-  folderScores.sort((a, b) => b.score - a.score);
-  const topMatches = folderScores.filter(f => f.score > 0).slice(0, 3);
-
-  // 4. Let user pick: top matches, AI suggestion, or custom
+  // 3. Let user confirm or override
   let options = [];
-  for (const match of topMatches) {
-    options.push({ label: `Use existing folder: ${match.folder}`, value: match.folder });
+  if (aiPath && existingFolders.includes(aiPath)) {
+    options.push({ label: `Use existing folder: ${aiPath}`, value: aiPath });
+  } else if (aiPath) {
+    options.push({ label: `Create new folder: ${aiPath}`, value: aiPath });
   }
-  options.push({ label: `Create new folder: ${aiPath}`, value: aiPath });
   options.push({ label: 'Other (specify manually)', value: '__other__' });
   const picked = await vscode.window.showQuickPick(options, { placeHolder: 'Select a folder to categorize this note' });
   if (!picked) return aiPath;
