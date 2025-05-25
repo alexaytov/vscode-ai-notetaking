@@ -8,8 +8,7 @@ import { v4 as uuidv4 } from 'uuid'; // npm install uuid
 import { getAllFolders } from './files';
 import { generateTags, generateName, generatePath } from './ai';
 import { upsertFrontmatterKey } from './frontmatter';
-
-import { NotesByTagProvider } from './notesTree';
+import { NotesByTagWebviewProvider } from './notesByTagWebview';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -23,15 +22,6 @@ function formatDateDDMMYYYY(timestamp: number): string {
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-
-	const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (workspaceFolders) {
-        const notesProvider = new NotesByTagProvider(workspaceFolders[0].uri.fsPath);
-        vscode.window.registerTreeDataProvider('aiNotesByTag', notesProvider);
-        context.subscriptions.push(
-            vscode.commands.registerCommand('aiNotesByTag.refresh', () => notesProvider.refresh())
-        );
-    }
 
 	// The command has been defined in the package.json file
 	const newNoteDisposable = vscode.commands.registerCommand('ai-notes.newNote', async () => {
@@ -179,6 +169,17 @@ export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(newNoteDisposable);
 	context.subscriptions.push(reclassifyNoteDisposable);
+
+	// Register the test input webview view
+	const workspaceFolders = vscode.workspace.workspaceFolders;
+	if (workspaceFolders) {
+		context.subscriptions.push(
+			vscode.window.registerWebviewViewProvider(
+				NotesByTagWebviewProvider.viewType,
+				new NotesByTagWebviewProvider(workspaceFolders[0].uri.fsPath)
+			)
+		);
+	}
 }
 
 /**

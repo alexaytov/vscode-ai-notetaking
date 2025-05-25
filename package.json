@@ -15,8 +15,9 @@
     "views": {
       "explorer": [
         {
-          "id": "aiNotesByTag",
-          "name": "AI Notes by Tag"
+          "id": "aiNotesByTagWebView",
+          "name": "AI Notes by Tag",
+          "type": "webview"
         }
       ]
     },
@@ -65,16 +66,7 @@
         "command": "aiNotesByTag.refresh",
         "title": "AI Notes: Refresh AI Notes by Tag"
       }
-    ],
-    "menus": {
-      "view/title": [
-        {
-          "command": "aiNotesByTag.refresh",
-          "when": "view == aiNotesByTag",
-          "group": "navigation"
-        }
-      ]
-    }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
