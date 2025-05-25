@@ -1,307 +1,131 @@
-// -----------------------------------------------------------------------------------------
-// File: extension.ts
-// Description: VS Code extension for AI Note Saver.
-// Auto-tags and organizes Markdown notes using the OpenAI API.
-// -----------------------------------------------------------------------------------------
+// The module 'vscode' contains the VS Code extensibility API
+// Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import { OpenAI } from 'openai';
-import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as fs from 'fs';
+import { v4 as uuidv4 } from 'uuid'; // npm install uuid
 
-/**
- * Called when the extension is activated.
- * Registers commands for saving and reclassifying notes.
- */
+import { getAllFolders } from './files';
+import { generateTags, generateName, generatePath } from './ai';
+
+// Helper to format a timestamp as dd-mm-yyyy
+function formatDateDDMMYYYY(timestamp: number): string {
+	const date = new Date(timestamp);
+	const dd = String(date.getDate()).padStart(2, '0');
+	const mm = String(date.getMonth() + 1).padStart(2, '0');
+	const yyyy = date.getFullYear();
+	return `${dd}-${mm}-${yyyy}`;
+}
+
+// This method is called when your extension is activated
+// Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-  // Register commands for saving and reclassifying notes
-  context.subscriptions.push(
-    vscode.commands.registerCommand('aiNoteSaver.saveNote', () => handleNote(false)),
-    vscode.commands.registerCommand('aiNoteSaver.reclassifyNote', () => handleNote(true))
-  );
+
+	// The command has been defined in the package.json file
+	const newNoteDisposable = vscode.commands.registerCommand('ai-notes.newNote', async () => {
+		const workspaceFolders = vscode.workspace.workspaceFolders;
+		if (!workspaceFolders) {
+			vscode.window.showErrorMessage('No workspace folder open.');
+			return;
+		}
+		const rootDir = workspaceFolders[0].uri.fsPath;
+		const draftsDir = path.join(rootDir, '_drafts');
+		if (!fs.existsSync(draftsDir)) {
+			fs.mkdirSync(draftsDir, { recursive: true });
+		}
+
+		const guid = uuidv4();
+		const fileName = `${formatDateDDMMYYYY(Date.now())}_${guid}.md`;
+		const filePath = path.join(draftsDir, fileName);
+		const fileUri = vscode.Uri.file(filePath);
+
+		await vscode.workspace.fs.writeFile(fileUri, Buffer.from('', 'utf8'));
+		const doc = await vscode.workspace.openTextDocument(fileUri);
+		await vscode.window.showTextDocument(doc);
+
+		// Listen for save and move/rename after AI categorization
+		const saveListener = vscode.workspace.onDidSaveTextDocument(async (savedDoc) => {
+			if (savedDoc.uri.fsPath === filePath) {
+				saveListener.dispose();
+
+				const content = savedDoc.getText();
+
+				const selectedTags = await getTags(content, savedDoc);
+				const selectedPath = path.join(rootDir, await getPath(rootDir, selectedTags, content));
+
+				const aiName = await generateName(selectedTags);
+				const finalName = await vscode.window.showInputBox({
+					prompt: 'Suggested note name',
+					value: aiName || '',
+					placeHolder: 'Note name'
+				});
+
+				// Make sure the path exists
+				if (!fs.existsSync(selectedPath)) {
+					fs.mkdirSync(selectedPath, { recursive: true });
+				}
+		
+				const formattedDate = formatDateDDMMYYYY(Date.now());
+				const newFileName = `${finalName}_${formattedDate}.md`;
+				const newFilePath = path.join(selectedPath, newFileName);
+				const newFileUri = vscode.Uri.file(newFilePath);
+
+				await vscode.workspace.fs.rename(savedDoc.uri, newFileUri, { overwrite: false });
+				await vscode.window.showTextDocument(newFileUri);
+			}
+		});
+		context.subscriptions.push(saveListener);
+	});
+
+	context.subscriptions.push(newNoteDisposable);
 }
 
-export function deactivate() {}
+async function getTags(content: string, savedDoc: vscode.TextDocument): Promise<string[]> {
+	const tags = await generateTags(content);
 
-/**
- * Read and validate extension configuration.
- * @throws Error if any required setting is missing.
- */
-function getExtensionConfig(): { apiKey: string; apiUrl: string; model: string; targetRoot: string; workspaceFolder: string } {
-  const cfg = vscode.workspace.getConfiguration('aiNoteSaver');
-  const apiKey = cfg.get<string>('openaiApiKey')?.trim();
-  const apiUrl = cfg.get<string>('apiUrl')?.trim();
-  const model = cfg.get<string>('model')?.trim();
-  const rawTarget = cfg.get<string>('targetRoot')?.trim();
-  if (!apiKey) throw new Error('OpenAI API key not set');
-  if (!vscode.workspace.workspaceFolders?.length) throw new Error('No workspace folder open');
-  const workspaceFolder = vscode.workspace.workspaceFolders[0].uri.fsPath;
-  const targetRoot = rawTarget!.replace(/\$\{workspaceFolder\}/g, workspaceFolder);
-  return { apiKey, apiUrl: apiUrl!, model: model!, targetRoot, workspaceFolder };
+	// Show tags to user as a comma-separated editable list
+	let selectedTags: string[] = [];
+	if (tags.length > 0) {
+		const tagInput = await vscode.window.showInputBox({
+			prompt: 'Suggested tags (comma separated, single words, lowercase)',
+			value: tags.join(', ')
+		});
+		if (tagInput) {
+			selectedTags = tagInput.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+		}
+	}
+
+	// Add tags to the top of the note as YAML frontmatter if any selected
+	if (selectedTags.length > 0) {
+		const yaml = `---\ntags: [${selectedTags.join(', ')}]\n---\n`;
+		const edit = new vscode.WorkspaceEdit();
+		edit.insert(savedDoc.uri, new vscode.Position(0, 0), yaml);
+		await vscode.workspace.applyEdit(edit);
+		await savedDoc.save();
+	}
+
+	return selectedTags;
 }
 
-/**
- * Main handler for both save and reclassify operations.
- * @param reclassify  true for reclassification, false for initial save
- */
-async function handleNote(reclassify: boolean) {
-  // Load and validate configuration
-  let apiKey: string, apiUrl: string, model: string, targetRoot: string, workspaceFolder: string;
-  try {
-    ({ apiKey, apiUrl, model, targetRoot, workspaceFolder } = getExtensionConfig());
-  } catch (err: any) {
-    vscode.window.showErrorMessage(`AI Note Saver: ${err.message}`);
-    return;
-  }
+async function getPath(rootDir: string, selectedTags: string[], content: string): Promise<string> {
+	const existingFolders = await getAllFolders(rootDir, 3);
+	const aiPath = await generatePath(selectedTags, content, existingFolders);
 
-  // Initialize AI client
-  const openai = new OpenAI({ apiKey, baseURL: apiUrl });
-
-  // Get active document
-  const editor = vscode.window.activeTextEditor;
-  if (!editor) {
-    vscode.window.showWarningMessage('AI Note Saver: No active editor');
-    return;
-  }
-  const doc = editor.document;
-  if (doc.languageId !== 'markdown') {
-    vscode.window.showWarningMessage('AI Note Saver: Not a Markdown file');
-    return;
-  }
-
-  // Use in-memory text so it works for unsaved/untitled files
-  const text = doc.getText();
-  try {
-    // Extract tags, path, and filename slug via AI
-    const tags = await extractTags(openai, model, text);
-    const relPath = await generateRelPath(openai, model, tags, text, targetRoot);
-    const slug = await generateSlug(openai, model, text);
-    const fileName = `${slug}.md`;
-
-    // Allow user to edit tags, path, and filename
-    const editedTagsInput = await vscode.window.showInputBox({
-      prompt: 'Edit tags (comma-separated)',
-      value: tags.join(', ')
-    });
-    if (editedTagsInput === undefined) {
-      vscode.window.showInformationMessage('AI Note Saver: operation cancelled');
-      return;
-    }
-    const finalTags = editedTagsInput.split(',').map(t => t.trim()).filter(t => t);
-
-    // Prompt user for relative path
-    // const editedRelPath = await vscode.window.showInputBox({
-    //   prompt: 'Edit relative path under workspace',
-    //   value: relPath
-    // });
-    // if (editedRelPath === undefined) {
-    //   vscode.window.showInformationMessage('AI Note Saver: operation cancelled');
-    //   return;
-    // }
-    // const finalRelPath = editedRelPath.trim();
-
-    // Prompt user for file name
-    const editedFileName = await vscode.window.showInputBox({
-      prompt: 'Edit file name (include .md)',
-      value: fileName
-    });
-    if (editedFileName === undefined) {
-      vscode.window.showInformationMessage('AI Note Saver: operation cancelled');
-      return;
-    }
-    let finalFileName = editedFileName.trim();
-    if (!finalFileName.toLowerCase().endsWith('.md')) {
-      finalFileName += '.md';
-    }
-
-    // Move file and insert tags
-    await moveAndTagFile(doc, finalTags, relPath, targetRoot, finalFileName, reclassify, text);
-  } catch (err: any) {
-    vscode.window.showErrorMessage(`AI Note Saver error: ${err.message}`);
-  }
+	let options = [];
+	if (aiPath && existingFolders.includes(aiPath)) {
+		options.push({ label: `Use existing folder: ${aiPath}`, value: aiPath });
+	} else if (aiPath) {
+		options.push({ label: `Create new folder: ${aiPath}`, value: aiPath });
+	}
+	options.push({ label: 'Other (specify manually)', value: '__other__' });
+	const picked = await vscode.window.showQuickPick(options, { placeHolder: 'Select a folder to categorize this note' });
+	if (!picked) {return aiPath;}
+	if (picked.value === '__other__') {
+		const manual = await vscode.window.showInputBox({ prompt: 'Enter relative folder path under workspace', value: aiPath });
+		return manual?.trim() || aiPath;
+	}
+	return picked.value;
 }
 
-/**
- * Extract tags from the given text using the AI model.
- * @param openai OpenAI client
- * @param model AI model to use
- * @param text Text to extract tags from
- * @returns Array of extracted tags
- */
-async function extractTags(openai: OpenAI, model: string, text: string) {
-  const tagResp = await openai.chat.completions.create({
-    model,
-    messages: [
-      { role: 'system', content: 'Extract 2-3 concise tags (comma-separated) based on the core contents of this node.' },
-      { role: 'user', content: text }
-    ]
-  });
-  const tags = tagResp.choices[0].message!.content!.split(',').map(t => t.trim());
-  vscode.window.showInformationMessage(`AI Note Saver: extracted tags: ${tags.join(', ')}`);
-  return tags;
-}
-
-/**
- * Generate a relative path for the given tags and text using the AI model.
- * Suggests an existing folder if appropriate, or creates a new one if needed.
- * @param openai OpenAI client
- * @param model AI model to use
- * @param tags Tags to use for generating the path
- * @param text Text to use for generating the path
- * @param targetRoot The root directory under which to categorize notes
- * @returns Relative path
- */
-async function generateRelPath(openai: OpenAI, model: string, tags: string[], text: string, targetRoot: string) {
-  // 1. List all subfolders under targetRoot (up to 3 levels)
-  const getAllFolders = async (root: string, depth = 3, prefix = ''): Promise<string[]> => {
-    if (depth === 0) return [];
-    let result: string[] = [];
-    try {
-      const entries = await fs.readdir(path.join(root, prefix), { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          const rel = path.join(prefix, entry.name);
-          result.push(rel);
-          result = result.concat(await getAllFolders(root, depth - 1, rel));
-        }
-      }
-    } catch (e) {}
-    return result;
-  };
-  const existingFolders = await getAllFolders(targetRoot);
-
-  // 2. Ask AI to choose from existing folders, or propose a new one
-  const aiPrompt = `Given the following tags: ${JSON.stringify(tags)}, note content: """${text.substring(0, 500)}""", and these existing folders: [${existingFolders.join(', ')}]. Choose the most appropriate folder from the list for categorizing this note. If none are suitable, propose a new folder path (up to 3 levels deep, using lowercase letters and dashes). Output only the selected path.`;
-  const pathResp = await openai.chat.completions.create({
-    model,
-    messages: [
-      { role: 'system', content: aiPrompt }
-    ]
-  });
-  let aiPath = pathResp.choices[0].message!.content!.trim() || '';
-  aiPath = aiPath.split(/[\n/\\]/).map(seg => seg.replace(/_/g, '-').trim()).filter(Boolean).slice(0, 3).join('/');
-
-  // 3. Let user confirm or override
-  let options = [];
-  if (aiPath && existingFolders.includes(aiPath)) {
-    options.push({ label: `Use existing folder: ${aiPath}`, value: aiPath });
-  } else if (aiPath) {
-    options.push({ label: `Create new folder: ${aiPath}`, value: aiPath });
-  }
-  options.push({ label: 'Other (specify manually)', value: '__other__' });
-  const picked = await vscode.window.showQuickPick(options, { placeHolder: 'Select a folder to categorize this note' });
-  if (!picked) return aiPath;
-  if (picked.value === '__other__') {
-    const manual = await vscode.window.showInputBox({ prompt: 'Enter relative folder path under workspace', value: aiPath });
-    return manual?.trim() || aiPath;
-  }
-  return picked.value;
-}
-
-/**
- * Generate a filesystem-safe slug from raw AI response.
- * @param input Raw slug suggestion
- */
-function sanitizeSlug(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-+/g, '-');
-}
-
-/**
- * Find the index of the first Markdown header line.
- */
-function getTitleIndex(lines: string[]): number {
-  const idx = lines.findIndex(line => /^\s*#/.test(line));
-  return idx < 0 ? 0 : idx;
-}
-
-/**
- * Insert a Tags line immediately after the title.
- */
-function insertTags(lines: string[], tags: string[]): string[] {
-  const idx = getTitleIndex(lines);
-  const copy = [...lines];
-  copy.splice(idx + 1, 0, `Tags: ${tags.join(', ')}`);
-  return copy;
-}
-
-/**
- * Request an AI-generated slug and sanitize it.
- */
-async function generateSlug(openai: OpenAI, model: string, text: string): Promise<string> {
-  const resp = await openai.chat.completions.create({
-    model,
-    messages: [
-      { role: 'system', content: 'Propose a concise filename slug (lowercase, dash-separated, no extension) based on note content. No extension.' },
-      { role: 'user', content: text }
-    ]
-  });
-  const raw = resp.choices[0].message!.content!.trim();
-  return sanitizeSlug(raw) || 'note';
-}
-
-/**
- * Move the file to the target location and insert tags.
- * @param doc Document to move
- * @param tags Tags to insert
- * @param relPath Relative path to move to
- * @param targetRoot Target root directory
- * @param fileName New filename
- * @param reclassify Whether this is a reclassify operation
- * @param inMemoryText Optional: in-memory text for unsaved/untitled docs
- */
-async function moveAndTagFile(doc: vscode.TextDocument, tags: string[], relPath: string, targetRoot: string, fileName: string, reclassify: boolean, inMemoryText?: string) {
-  const destDir = path.join(targetRoot, relPath);
-  vscode.window.showInformationMessage(`AI Note Saver: generated path: ${destDir}`);
-  await fs.mkdir(destDir, { recursive: true });
-  const destPath = path.join(destDir, fileName);
-  let origContent: string;
-  if (doc.isUntitled && inMemoryText !== undefined) {
-    // Use in-memory content for unsaved/untitled docs
-    origContent = inMemoryText;
-  } else {
-    origContent = await fs.readFile(doc.fileName, 'utf8');
-  }
-  let lines = origContent.split(/\r?\n/);
-  if (reclassify) {
-    // Remove existing Tags lines
-    lines = lines.filter(line => !/^Tags:/.test(line));
-  }
-  // Inject new Tags after title
-  lines = insertTags(lines, tags);
-  const newContent = lines.join('\n');
-  await fs.writeFile(destPath, newContent, 'utf8');
-  if (!doc.isUntitled && !doc.isDirty && destPath !== doc.fileName) {
-    // Only close the old tab if the doc is saved and unmodified
-    await fs.unlink(doc.fileName);
-    await removeEmptyDirsRecursively(path.dirname(doc.fileName));
-    await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
-    await vscode.window.showTextDocument(vscode.Uri.file(destPath), { preview: false });
-    vscode.window.showInformationMessage(`AI Note Saver: reclassified to ${destPath}`);
-  } else {
-    // For untitled/unsaved/dirty docs, just open the new file and leave the old tab open
-    await vscode.window.showTextDocument(vscode.Uri.file(destPath), { preview: false });
-    vscode.window.showInformationMessage(`AI Note Saver: note saved to ${destPath}`);
-  }
-}
-
-/**
- * Remove empty directories up to the workspace root.
- * @param dir Directory to start from
- */
-async function removeEmptyDirsRecursively(dir: string) {
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  let curr = dir;
-  while (curr !== workspaceFolder) {
-    const entries = await fs.readdir(curr);
-    if (entries.length === 0) {
-      await fs.rmdir(curr);
-      vscode.window.showInformationMessage(`AI Note Saver: removed empty folder ${curr}`);
-      curr = path.dirname(curr);
-    } else {
-      break;
-    }
-  }
-}
+// This method is called when your extension is deactivated
+export function deactivate() { }

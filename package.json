@@ -1,67 +1,73 @@
 {
-  "name": "ai-note-saver",
-  "displayName": "AI Note Saver",
-  "description": "Automatically tags and moves notes using AI",
+  "name": "ai-notes",
+  "displayName": "ai-notes",
+  "description": "",
   "version": "0.0.1",
   "engines": {
-    "vscode": "^1.60.0"
+    "vscode": "^1.100.0"
   },
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onCommand:aiNoteSaver.saveNote",
-    "onCommand:aiNoteSaver.reclassifyNote"
-  ],
+  "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
-    "commands": [
-      {
-        "command": "aiNoteSaver.saveNote",
-        "title": "AI Note Saver: Save Note"
-      },
-      {
-        "command": "aiNoteSaver.reclassifyNote",
-        "title": "AI Note Saver: Reclassify Note"
-      }
-    ],
     "configuration": {
-      "title": "AI Note Saver",
+      "title": "AI Notes",
       "properties": {
-        "aiNoteSaver.openaiApiKey": {
+        "ai-notes.llmProvider": {
           "type": "string",
-          "description": "OpenAI API key"
+          "enum": ["vscode-lm-api", "sap-ai-core"],
+          "default": "vscode-lm-api",
+          "description": "The LLM provider to use for AI Notes. 'vscode-lm-api' uses the VS Code Language Model API, while 'sap-ai-core' uses the SAP AI Core.",
+          "enumDescriptions": [
+            "Use the VS Code Language Model API for AI Notes.",
+            "Use the SAP AI Core for AI Notes."
+          ]
         },
-        "aiNoteSaver.model": {
+        "ai-notes.aiCoreServiceKey": {
           "type": "string",
-          "default": "gpt-4o-mini",
-          "description": "AI model to use for tagging"
+          "default": "",
+          "description": "The service key for the SAP AI Core. This is required if 'sap-ai-core' is selected as the LLM provider."
         },
-        "aiNoteSaver.targetRoot": {
+        "ai-notes.aiCoreModel": {
           "type": "string",
-          "default": "${workspaceFolder}/notes",
-          "description": "Root directory for saved notes"
-        },
-        "aiNoteSaver.apiUrl": {
-          "type": "string",
-          "default": "https://api.openai.com/v1",
-          "description": "Base URL for the OpenAI API"
+          "default": "gpt-4.1",
+          "description": "The OpenAI model to use for the SAP AI Core. This is required if 'sap-ai-core' is selected as the LLM provider."
         }
       }
-    }
+    },
+    "commands": [
+      {
+        "command": "ai-notes.newNote",
+        "title": "AI Notes: New Note"
+      },
+      {
+        "command": "ai-notes.saveNote",
+        "title": "AI Notes: Save Note"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p .",
-    "watch": "tsc -watch -p ."
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/node": "^14.14.0",
-    "@types/vscode": "^1.60.0",
-    "typescript": "^4.4.0"
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.100.0",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.25.1",
+    "typescript": "^5.8.3"
   },
   "dependencies": {
-    "openai": "^4.10.0",
-    "mkdirp": "^1.0.4"
+    "uuid": "^11.1.0"
   }
 }

@@ -1,28 +1,5 @@
-# Node dependencies
-/node_modules/
-
-# Build output
-/out/
-/dist/
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-pnpm-debug.log*
-*.log
-
-# Environment variables
-.env
-.env.*.local
-
-# VSCode settings
-.vscode/
-
-# VSCE package
+out
+dist
+node_modules
+.vscode-test/
 *.vsix
-
-# macOS
-.DS_Store
-
-# TypeScript cache
-*.tsbuildinfo
