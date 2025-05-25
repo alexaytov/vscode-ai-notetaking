@@ -9,6 +9,8 @@ import { getAllFolders } from './files';
 import { generateTags, generateName, generatePath } from './ai';
 import { upsertFrontmatterKey } from './frontmatter';
 
+import { NotesByTagProvider } from './notesTree';
+
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
 	const date = new Date(timestamp);
@@ -21,6 +23,15 @@ function formatDateDDMMYYYY(timestamp: number): string {
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
+
+	const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (workspaceFolders) {
+        const notesProvider = new NotesByTagProvider(workspaceFolders[0].uri.fsPath);
+        vscode.window.registerTreeDataProvider('aiNotesByTag', notesProvider);
+        context.subscriptions.push(
+            vscode.commands.registerCommand('aiNotesByTag.refresh', () => notesProvider.refresh())
+        );
+    }
 
 	// The command has been defined in the package.json file
 	const newNoteDisposable = vscode.commands.registerCommand('ai-notes.newNote', async () => {
