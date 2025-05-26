@@ -55,16 +55,8 @@
         "title": "AI Notes: New Note"
       },
       {
-        "command": "ai-notes.saveNote",
-        "title": "AI Notes: Save Note"
-      },
-      {
         "command": "ai-notes.reclassifyNote",
         "title": "AI Notes: Reclassify Note"
-      },
-      {
-        "command": "aiNotesByTag.refresh",
-        "title": "AI Notes: Refresh AI Notes by Tag"
       }
     ]
   },
