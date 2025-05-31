@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid'; // npm install uuid
 
 import { getAllFolders } from './files';
-import { generateTags, generateName, generatePath } from './ai';
+import { generateNoteMetadata } from './ai';
 import { upsertFrontmatterKey } from './frontmatter';
 import { NotesByTagWebviewProvider } from './notesByTagWebview';
 
@@ -51,47 +51,36 @@ export function activate(context: vscode.ExtensionContext) {
 				saveListener.dispose();
 
 				const content = savedDoc.getText();
+				const existingFolders = await getAllFolders(rootDir, 3);
 
-				const selectedTags = await getTags(content, savedDoc);
-				if (!selectedTags) {
-					vscode.window.showErrorMessage('No tags selected, note not saved.');
-					return;
-				}
-				if (selectedTags.length > 0) {
-					const yaml = `---\ntags: [${selectedTags.join(', ')}]\n---\n`;
-					const edit = new vscode.WorkspaceEdit();
-					edit.insert(savedDoc.uri, new vscode.Position(0, 0), yaml);
-					await vscode.workspace.applyEdit(edit);
-					await savedDoc.save();
-				}
-
-
-				const selectedPath = await getPath(rootDir, selectedTags, content);
-				if (!selectedPath) {
-					vscode.window.showErrorMessage('No path selected, note not saved.');
+				const metadata = await generateNoteMetadata(content, existingFolders);
+				if (!metadata || !metadata.tags || !metadata.name || !metadata.path) {
+					vscode.window.showErrorMessage('AI categorization failed, please try again.');
 					return;
 				}
 
-				const aiName = await generateName(selectedTags);
-				const finalName = await vscode.window.showInputBox({
-					prompt: 'Suggested note name',
-					value: aiName || '',
-					placeHolder: 'Note name'
-				});
-				if (!finalName) {
-					vscode.window.showErrorMessage('No name provided, note not saved.');
+				const userMetadata = await promptUserForNoteMetadata(metadata, existingFolders, rootDir);
+				if (!userMetadata) {
 					return;
 				}
+
+				const { tags, directory, name } = userMetadata;
 
 				// Make sure the path exists
-				if (!fs.existsSync(selectedPath)) {
-					fs.mkdirSync(selectedPath, { recursive: true });
+				if (!fs.existsSync(directory)) {
+					fs.mkdirSync(directory, { recursive: true });
 				}
 
 				const formattedDate = formatDateDDMMYYYY(Date.now());
-				const newFileName = `${finalName}_${formattedDate}.md`;
-				const newFilePath = path.join(selectedPath, newFileName);
+				const newFileName = `${name}_${formattedDate}.md`;
+				const newFilePath = path.join(directory, newFileName);
 				const newFileUri = vscode.Uri.file(newFilePath);
+
+				const yaml = `---\ntags: [${tags.join(', ')}]\n---\n`;
+				const edit = new vscode.WorkspaceEdit();
+				edit.insert(savedDoc.uri, new vscode.Position(0, 0), yaml);
+				await vscode.workspace.applyEdit(edit);
+				await savedDoc.save();
 
 				await vscode.workspace.fs.rename(savedDoc.uri, newFileUri, { overwrite: false });
 				await vscode.window.showTextDocument(newFileUri);
@@ -122,42 +111,34 @@ export function activate(context: vscode.ExtensionContext) {
 		const yamlRegex = /^---\n(?:.*\n)*?---\n/;
 		const cleanedContent = content.replace(yamlRegex, '');
 
-		const newTags = await getTags(cleanedContent, doc);
-		if (!newTags) {
-			vscode.window.showErrorMessage('No tags selected, note not reclassified.');
+		const existingFolders = await getAllFolders(rootDir, 3);
+		const metadata = await generateNoteMetadata(cleanedContent, existingFolders);
+
+		if (!metadata || !metadata.tags || !metadata.name || !metadata.path) {
+			vscode.window.showErrorMessage('AI categorization failed, please try again.');
 			return;
 		}
 
-		const newDirectory = await getPath(rootDir, newTags, cleanedContent);
-		if (!newDirectory) {
-			vscode.window.showErrorMessage('No path selected, note not reclassified.');
+		// Use the new promptUserForNoteMetadata function
+		const userMetadata = await promptUserForNoteMetadata(metadata, existingFolders, rootDir);
+		if (!userMetadata) {
 			return;
 		}
 
-		const newName = await generateName(newTags);
-		const finalName = await vscode.window.showInputBox({
-			prompt: 'Suggested note name',
-			value: newName || ''
-		});
-		if (!finalName) {
-			vscode.window.showErrorMessage('No name provided, note not reclassified.');
-			return;
-		}
+		const { tags, directory, name } = userMetadata;
 
 		// Update tags
-		await upsertFrontmatterKey(doc, 'tags', newTags);
-				
-		// Update directory and name
+		await upsertFrontmatterKey(doc, 'tags', tags);
 
 		// Make sure the new directory exists
-		if (!fs.existsSync(newDirectory)) {
-			fs.mkdirSync(newDirectory, { recursive: true });
+		if (!fs.existsSync(directory)) {
+			fs.mkdirSync(directory, { recursive: true });
 		}
 
 		// Rename the file with the new name and current date
 		const formattedDate = formatDateDDMMYYYY(Date.now());
-		const newFileName = `${finalName}_${formattedDate}.md`;
-		const newFilePath = path.join(newDirectory, newFileName);
+		const newFileName = `${name}_${formattedDate}.md`;
+		const newFilePath = path.join(directory, newFileName);
 		const newFileUri = vscode.Uri.file(newFilePath);
 		await vscode.workspace.fs.rename(doc.uri, newFileUri, { overwrite: false });
 		await vscode.window.showTextDocument(newFileUri);
@@ -183,66 +164,77 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 /**
+ * Prompts the user for tags, directory, and name, using AI metadata as suggestions.
+ * Returns { tags, directory, name } or undefined if cancelled.
+ */
+async function promptUserForNoteMetadata(metadata: { tags: string[]; name: string; path: string }, existingFolders: string[], rootDir: string): Promise<{ tags: string[]; directory: string; name: string } | undefined> {
+    // Prompt for tags
+    const tagInput = await vscode.window.showInputBox({
+        prompt: 'Suggested tags (comma separated, single words, lowercase)',
+        value: metadata.tags.join(', ')
+    });
+    if (!tagInput) {
+        vscode.window.showErrorMessage('No tags selected, operation cancelled.');
+        return undefined;
+    }
+    const selectedTags = tagInput.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+
+    // Prompt for directory
+    let options = [];
+    if (metadata.path && existingFolders.includes(metadata.path)) {
+        options.push({ label: `Use existing folder: ${metadata.path}`, value: metadata.path });
+    } else if (metadata.path) {
+        options.push({ label: `Create new folder: ${metadata.path}`, value: metadata.path });
+    }
+    options.push({ label: 'Other (specify manually)', value: '__other__' });
+    const picked = await vscode.window.showQuickPick(options, { placeHolder: 'Select a folder to categorize this note' });
+    let selectedPath: string | undefined;
+    if (!picked) {
+        vscode.window.showErrorMessage('No path selected, operation cancelled.');
+        return undefined;
+    }
+    if (picked.value === '__other__') {
+        const manual = await vscode.window.showInputBox({ prompt: 'Enter relative folder path under workspace', value: metadata.path });
+        if (!manual) {
+            vscode.window.showErrorMessage('No path selected, operation cancelled.');
+            return undefined;
+        }
+        selectedPath = path.join(rootDir, manual.trim());
+    } else {
+        selectedPath = path.join(rootDir, picked.value);
+    }
+
+    // Prompt for name
+    const finalName = await vscode.window.showInputBox({
+        prompt: 'Suggested note name',
+        value: metadata.name || '',
+        placeHolder: 'Note name'
+    });
+    if (!finalName) {
+        vscode.window.showErrorMessage('No name provided, operation cancelled.');
+        return undefined;
+    }
+
+    return { tags: selectedTags, directory: selectedPath, name: finalName };
+}
+
+/**
  * Remove empty directories up to the workspace root.
  * @param dir Directory to start from
  */
 async function removeEmptyDirsRecursively(dir: string) {
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  let curr = dir;
-  while (curr !== workspaceFolder) {
-	const entries = await fs.promises.readdir(curr);
-	if (entries.length === 0) {
-	  await fs.promises.rmdir(curr);
-	  vscode.window.showInformationMessage(`AI Note Saver: removed empty folder ${curr}`);
-	  curr = path.dirname(curr);
-	} else {
-	  break;
-	}
-  }
-}
-
-async function getTags(content: string, savedDoc: vscode.TextDocument): Promise<string[] | undefined> {
-	const tags = await generateTags(content);
-
-	// Show tags to user as a comma-separated editable list
-	let selectedTags: string[] = [];
-	const tagInput = await vscode.window.showInputBox({
-		prompt: 'Suggested tags (comma separated, single words, lowercase)',
-		value: tags.join(', ')
-	});
-	if (!tagInput) {
-		return;
-	}
-
-	selectedTags = tagInput.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
-	return selectedTags;
-}
-
-async function getPath(rootDir: string, selectedTags: string[], content: string): Promise<string | undefined> {
-	const existingFolders = await getAllFolders(rootDir, 3);
-	const aiPath = await generatePath(selectedTags, content, existingFolders);
-
-	let options = [];
-	if (aiPath && existingFolders.includes(aiPath)) {
-		options.push({ label: `Use existing folder: ${aiPath}`, value: aiPath });
-	} else if (aiPath) {
-		options.push({ label: `Create new folder: ${aiPath}`, value: aiPath });
-	}
-	options.push({ label: 'Other (specify manually)', value: '__other__' });
-	const picked = await vscode.window.showQuickPick(options, { placeHolder: 'Select a folder to categorize this note' });
-	if (!picked) {
-		return;
-	}
-
-	if (picked.value === '__other__') {
-		const manual = await vscode.window.showInputBox({ prompt: 'Enter relative folder path under workspace', value: aiPath });
-		if (!manual) {
-			return;
+	const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+	let curr = dir;
+	while (curr !== workspaceFolder) {
+		const entries = await fs.promises.readdir(curr);
+		if (entries.length === 0) {
+			await fs.promises.rmdir(curr);
+			vscode.window.showInformationMessage(`AI Note Saver: removed empty folder ${curr}`);
+			curr = path.dirname(curr);
+		} else {
+			break;
 		}
-
-		return path.join(rootDir, manual.trim());
 	}
-	return path.join(rootDir, picked.value);
 }
 
 // This method is called when your extension is deactivated

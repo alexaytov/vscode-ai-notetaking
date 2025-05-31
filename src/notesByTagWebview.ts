@@ -73,19 +73,41 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                 .filter-bar {
                     display: flex;
                     align-items: center;
-                    margin-bottom: 8px;
+                    margin-bottom: 12px;
+                    flex-wrap: wrap;
+                    background: var(--vscode-input-background);
+                    border-radius: 6px;
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+                    padding: 8px 12px 8px 8px;
+                    gap: 6px;
                 }
                 #filter {
                     flex: 1;
-                    padding: 4px 8px;
+                    padding: 6px 12px;
                     border-radius: 4px;
                     border: 1px solid var(--vscode-input-border);
                     background: var(--vscode-input-background);
                     color: var(--vscode-input-foreground);
+                    font-size: 1em;
+                    margin-right: 4px;
                 }
                 .icon-search {
-                    margin-right: 6px;
+                    margin-right: 8px;
                     color: var(--vscode-icon-foreground);
+                    font-size: 1.1em;
+                }
+                #expandAll, #collapseAll, #refreshTags {
+                    background: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 10px;
+                    font-size: 0.95em;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                }
+                #expandAll:hover, #collapseAll:hover, #refreshTags:hover {
+                    background: var(--vscode-button-hoverBackground);
                 }
             </style>
             <div class="filter-bar">

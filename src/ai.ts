@@ -2,6 +2,63 @@ import * as vscode from 'vscode';
 
 import { aiCoreChatCompletion } from './ai-core';
 
+export interface NoteMetadata {
+    tags: string[];
+    name: string;
+    path: string;
+}
+
+/**
+ * Generates tags, name, and path in a single AI call.
+ */
+export async function generateNoteMetadata(content: string, existingFolders: string[]): Promise<NoteMetadata> {
+    const prompt = `
+You are an AI assistant for note-taking.
+Given the following note content, do the following:
+1. Extract up to 5 relevant tags (single words, comma-separated, lowercase, no spaces).
+2. Suggest a concise, descriptive name for the note (lowercase, dash-separated, no special characters or spaces).
+3. Suggest the most appropriate folder path for this note from the following list: [${existingFolders.join(', ')}]. If none are suitable, propose a new folder path (up to 3 levels deep, using lowercase letters and dashes).
+
+Respond in JSON format:
+{
+  "tags": ["tag1", "tag2", ...],
+  "name": "suggested-note-name",
+  "path": "suggested/folder/path"
+}
+
+Note content:
+"""${content}"""
+    `;
+    const response = await chatCompletionWithRetry(prompt);
+
+    try {
+        // Try to parse the response as JSON
+        const json = JSON.parse(response);
+        if (
+            Array.isArray(json.tags) &&
+            typeof json.name === 'string' &&
+            typeof json.path === 'string'
+        ) {
+            return {
+                tags: json.tags.map((t: string) => t.trim()).filter((t: string) => t.length > 0),
+                name: json.name.trim(),
+                path: json.path.trim(),
+            };
+        }
+    } catch (e) {
+        // fallback: try to extract manually if not valid JSON
+        const tagsMatch = response.match(/"tags"\s*:\s*\[([^\]]+)\]/);
+        const nameMatch = response.match(/"name"\s*:\s*"([^"]+)"/);
+        const pathMatch = response.match(/"path"\s*:\s*"([^"]+)"/);
+        return {
+            tags: tagsMatch ? tagsMatch[1].split(',').map((t: string) => t.replace(/["']/g, '').trim()) : [],
+            name: nameMatch ? nameMatch[1] : '',
+            path: pathMatch ? pathMatch[1] : '',
+        };
+    }
+    return { tags: [], name: '', path: '' };
+}
+
 async function aiCompletion(prompt: string): Promise<string> {
     const config = vscode.workspace.getConfiguration('ai-notes');
     const llmProvider = config.get<string>('llmProvider');
