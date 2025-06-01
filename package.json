@@ -66,6 +66,14 @@
           "light": "resources/light/export.svg",
           "dark": "resources/dark/export.svg"
         }
+      },
+      {
+        "command": "ai-notes.revealInFileExplorer",
+        "title": "AI Notes: Reveal in File Explorer",
+        "icon": {
+          "light": "resources/light/share.svg",
+          "dark": "resources/dark/share.svg"
+        }
       }
     ]
   },

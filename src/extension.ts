@@ -173,6 +173,55 @@ export function activate(context: vscode.ExtensionContext) {
 		await exportMarkdownToPdf(editor.document.fileName);
 	});
 	context.subscriptions.push(exportToPdfDisposable);
+
+	// OneDrive Share Link Command
+	const shareOnedriveLinkDisposable = vscode.commands.registerCommand('ai-notes.shareOnedriveLink', async () => {
+		const editor = vscode.window.activeTextEditor;
+		if (!editor) {
+			vscode.window.showErrorMessage('No active editor found.');
+			return;
+		}
+		const filePath = editor.document.fileName;
+			// No longer check if file is inside OneDrive folder; let the API call handle errors
+		const accessOptions = [
+			{ label: 'Anyone with the link (view)', value: 'anonymous' },
+			{ label: 'People in my organization (view)', value: 'organization' },
+			{ label: 'Specific people (view)', value: 'specific' }
+		];
+		const picked = await vscode.window.showQuickPick(accessOptions, { placeHolder: 'Choose OneDrive share access level' });
+		if (!picked) {
+			vscode.window.showErrorMessage('No access option selected.');
+			return;
+		}
+		// Use Microsoft Graph API to create a share link
+		try {
+			// Use explicit file extension for import
+			const { getOnedriveShareLink } = await import('./onedrive.js');
+			const link = await getOnedriveShareLink(filePath, picked.value);
+			await vscode.env.clipboard.writeText(link);
+			vscode.window.showInformationMessage('Shareable OneDrive link copied to clipboard!', { modal: false }, 'Open Link').then(action => {
+				if (action === 'Open Link') {
+					vscode.env.openExternal(vscode.Uri.parse(link));
+				}
+			});
+		} catch (err: any) {
+			vscode.window.showErrorMessage('Failed to create OneDrive share link: ' + (err && err.message ? err.message : String(err)));
+		}
+	});
+	context.subscriptions.push(shareOnedriveLinkDisposable);
+
+	// Reveal in Finder and prompt user to use Share menu (cross-platform)
+	const revealInFinderDisposable = vscode.commands.registerCommand('ai-notes.revealInFileExplorer', async () => {
+		const editor = vscode.window.activeTextEditor;
+		if (!editor) {
+			vscode.window.showErrorMessage('No active editor found.');
+			return;
+		}
+		const filePath = editor.document.fileName;
+		const fileUri = vscode.Uri.file(filePath);
+		await vscode.commands.executeCommand('revealFileInOS', fileUri);
+	});
+	context.subscriptions.push(revealInFinderDisposable);
 }
 
 /**
