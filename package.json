@@ -43,10 +43,10 @@
           "default": "",
           "description": "The service key for the SAP AI Core. This is required if 'sap-ai-core' is selected as the LLM provider."
         },
-        "ai-notes.aiCoreModel": {
+        "ai-notes.aiModel": {
           "type": "string",
           "default": "gpt-4.1",
-          "description": "The OpenAI model to use for the SAP AI Core. This is required if 'sap-ai-core' is selected as the LLM provider."
+          "description": "The OpenAI model to use for the SAP AI Core or VSCode LM API."
         }
       }
     },

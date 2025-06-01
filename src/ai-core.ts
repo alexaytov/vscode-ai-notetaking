@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 export async function aiCoreChatCompletion(prompt: string): Promise<string> {
     const config = vscode.workspace.getConfiguration('ai-notes');
     const aiCoreServiceKey = config.get<string>('aiCoreServiceKey');
-    const model = config.get<string>('aiCoreModel');
+    const model = config.get<string>('aiModel');
 
     process.env.AICORE_SERVICE_KEY = aiCoreServiceKey;
 

@@ -62,22 +62,23 @@ Note content:
 async function aiCompletion(prompt: string): Promise<string> {
     const config = vscode.workspace.getConfiguration('ai-notes');
     const llmProvider = config.get<string>('llmProvider');
+    const model = config.get<string>('aiModel');
 
     if (llmProvider === 'sap-ai-core') {
         return aiCoreChatCompletion(prompt);
     } else if (llmProvider === 'vscode-lm-api') {
-        return vsCodeLMAPIChatCompletion(prompt);
+        return vsCodeLMAPIChatCompletion(prompt, model || 'gpt-4.1');
     } else {
         throw new Error('Unsupported LLM provider: ' + llmProvider);
     }
 }
 
-async function vsCodeLMAPIChatCompletion(prompt: string): Promise<string> {
+async function vsCodeLMAPIChatCompletion(prompt: string, aiModel: string): Promise<string> {
     // @ts-ignore - VS Code LM API is proposed and may not be typed
     if (vscode.lm && vscode.lm.selectChatModels) {
         const [model] = await vscode.lm.selectChatModels({
             vendor: 'copilot',
-            family: 'gpt-4.1'
+            family: aiModel,
         });
         if (!model) {
             throw new Error('No suitable AI model found for chat completion.');
