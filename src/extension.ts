@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid'; // npm install uuid
+import { marked } from 'marked';
 
 import { getAllFolders } from './files';
 import { generateNoteMetadata } from './ai';
@@ -161,6 +162,17 @@ export function activate(context: vscode.ExtensionContext) {
 			)
 		);
 	}
+
+	// Register the export to PDF command
+	const exportToPdfDisposable = vscode.commands.registerCommand('ai-notes.exportToPdf', async () => {
+		const editor = vscode.window.activeTextEditor;
+		if (!editor || !editor.document.fileName.endsWith('.md')) {
+			vscode.window.showErrorMessage('No Markdown file open.');
+			return;
+		}
+		await exportMarkdownToPdf(editor.document.fileName);
+	});
+	context.subscriptions.push(exportToPdfDisposable);
 }
 
 /**
@@ -235,6 +247,77 @@ async function removeEmptyDirsRecursively(dir: string) {
 			break;
 		}
 	}
+}
+
+/**
+ * Converts markdown image links to embedded data URIs for local images.
+ */
+function embedImagesInMarkdown(mdContent: string, mdFilePath: string): string {
+    return mdContent.replace(/!\[(.*?)\]\((.*?)\)/g, (match, alt, imgPath) => {
+        if (/^https?:\/\//.test(imgPath)) {
+            // Remote image, leave as is
+            return match;
+        } else {
+            // Local image
+            const absPath = path.isAbsolute(imgPath)
+                ? imgPath
+                : path.join(path.dirname(mdFilePath), imgPath);
+            if (!fs.existsSync(absPath)) {
+                return match;
+            }
+            const ext = path.extname(absPath).slice(1).toLowerCase();
+            let mime = 'image/png';
+            if (ext === 'svg') {
+                mime = 'image/svg+xml';
+            } else if (ext === 'jpg' || ext === 'jpeg') {
+                mime = 'image/jpeg';
+            } else if (ext === 'gif') {
+                mime = 'image/gif';
+            } else if (ext === 'webp') {
+                mime = 'image/webp';
+            }
+            try {
+                const data = fs.readFileSync(absPath).toString('base64');
+                return `![${alt}](data:${mime};base64,${data})`;
+            } catch {
+                return match;
+            }
+        }
+    });
+}
+
+/**
+ * Exports a markdown file to PDF with embedded images.
+ */
+async function exportMarkdownToPdf(mdFilePath: string) {
+    const puppeteer = require('puppeteer');
+    const mdContent = fs.readFileSync(mdFilePath, 'utf8');
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    const mdWithEmbeddedImages = embedImagesInMarkdown(mdContent, mdFilePath);
+    // Add CSS to constrain image size
+    const htmlContent = `
+        <html>
+        <head>
+            <style>
+                img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
+                body { margin: 2em; font-family: sans-serif; }
+            </style>
+        </head>
+        <body>
+            ${marked(mdWithEmbeddedImages)}
+        </body>
+        </html>
+    `;
+    const tmpHtml = path.join(workspaceFolder, '___tmp_export.html');
+    fs.writeFileSync(tmpHtml, typeof htmlContent === 'string' ? htmlContent : String(htmlContent), { encoding: 'utf8' });
+    const pdfPath = mdFilePath.replace(/\.md$/, '.pdf');
+    const browser = await puppeteer.launch({ headless: 'new' });
+    const page = await browser.newPage();
+    await page.goto('file://' + tmpHtml, { waitUntil: 'networkidle0' });
+    await page.pdf({ path: pdfPath, format: 'A4' });
+    await browser.close();
+    fs.unlinkSync(tmpHtml);
+    vscode.window.showInformationMessage(`PDF exported: ${pdfPath}`);
 }
 
 // This method is called when your extension is deactivated

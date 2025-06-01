@@ -58,6 +58,14 @@
       {
         "command": "ai-notes.reclassifyNote",
         "title": "AI Notes: Reclassify Note"
+      },
+      {
+        "command": "ai-notes.exportToPdf",
+        "title": "AI Notes: Export Note to PDF",
+        "icon": {
+          "light": "resources/light/export.svg",
+          "dark": "resources/dark/export.svg"
+        }
       }
     ]
   },
@@ -83,6 +91,8 @@
   },
   "dependencies": {
     "@sap-ai-sdk/foundation-models": "^1.13.0",
+    "marked": "^15.0.12",
+    "puppeteer": "^24.9.0",
     "uuid": "^11.1.0"
   }
 }
