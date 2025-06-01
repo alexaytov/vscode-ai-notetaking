@@ -174,7 +174,7 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 	context.subscriptions.push(exportToPdfDisposable);
 
-	// Reveal in Finder and prompt user to use Share menu (cross-platform)
+	// Reveal in Finder (cross-platform)
 	const revealInFinderDisposable = vscode.commands.registerCommand('ai-notes.revealInFileExplorer', async () => {
 		const editor = vscode.window.activeTextEditor;
 		if (!editor) {
