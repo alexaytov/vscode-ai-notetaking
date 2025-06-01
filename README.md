@@ -1,3 +1,12 @@
+# Quickstart
+
+To quickly install the latest version of AI Notes in VS Code, run the following commands in your terminal:
+
+```sh
+curl -L -o ai-notes-0.0.3.vsix https://github.com/alexaytov/vscode-ai-notetaking/releases/download/0.0.3/ai-notes-0.0.3.vsix
+code --install-extension ai-notes-0.0.3.vsix
+```
+
 # AI Notes
 
 AI Notes is a Visual Studio Code extension that leverages AI to help you create, organize, and categorize your notes efficiently. It supports multiple LLM providers and can automatically suggest tags, names, and folders for your notes.
