@@ -71,8 +71,8 @@
         "command": "ai-notes.revealInFileExplorer",
         "title": "AI Notes: Reveal in File Explorer",
         "icon": {
-          "light": "resources/light/share.svg",
-          "dark": "resources/dark/share.svg"
+          "light": "resources/light/explorer.svg",
+          "dark": "resources/dark/explorer.svg"
         }
       }
     ]
