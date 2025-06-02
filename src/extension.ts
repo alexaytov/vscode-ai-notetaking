@@ -305,15 +305,18 @@ function embedImagesInMarkdown(mdContent: string, mdFilePath: string): string {
 async function exportMarkdownToPdf(mdFilePath: string) {
     const puppeteer = require('puppeteer');
     const mdContent = fs.readFileSync(mdFilePath, 'utf8');
+    // Remove frontmatter YAML if present
+    const mdContentNoFrontmatter = mdContent.replace(/^---\n(?:.*\n)*?---\n/, '');
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-    const mdWithEmbeddedImages = embedImagesInMarkdown(mdContent, mdFilePath);
+    const mdWithEmbeddedImages = embedImagesInMarkdown(mdContentNoFrontmatter, mdFilePath);
     // Add CSS to constrain image size
     const htmlContent = `
         <html>
         <head>
             <style>
+                @page { margin: 2cm; }
                 img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
-                body { margin: 2em; font-family: sans-serif; }
+                body { font-family: sans-serif; }
             </style>
         </head>
         <body>

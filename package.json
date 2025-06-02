@@ -1,8 +1,8 @@
 {
   "name": "ai-notes",
   "displayName": "ai-notes",
-  "description": "",
-  "version": "0.0.3",
+  "description": "A VS Code extension for AI-assisted note-taking, organization, and PDF export.",
+  "version": "0.0.4",
   "repository": "https://github.com/alexaytov/vscode-ai-notetaking",
   "engines": {
     "vscode": "^1.100.0"
@@ -12,6 +12,25 @@
   ],
   "activationEvents": [],
   "main": "./out/extension.js",
+  "author": {
+    "name": "Alex Aytov",
+    "email": "alexaytov92@gmail.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "notes",
+    "markdown",
+    "ai",
+    "notetaking",
+    "productivity",
+    "pdf",
+    "export",
+    "organization"
+  ],
+  "bugs": {
+    "url": "https://github.com/alexaytov/vscode-ai-notetaking/issues"
+  },
+  "homepage": "https://github.com/alexaytov/vscode-ai-notetaking#readme",
   "contributes": {
     "views": {
       "explorer": [
