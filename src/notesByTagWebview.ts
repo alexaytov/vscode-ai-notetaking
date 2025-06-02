@@ -131,7 +131,6 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                 const vscode = acquireVsCodeApi();
                 const filterInput = document.getElementById('filter');
                 let lastSent = filterInput.value;
-                let lastSelectionStart = filterInput.selectionStart;
                 let lastSelectionEnd = filterInput.selectionEnd;
 
                 // Only send filter on Enter key

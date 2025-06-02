@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 
 export async function aiCoreChatCompletion(prompt: string): Promise<string> {
     const config = vscode.workspace.getConfiguration('ai-notes');
-    const aiCoreServiceKey = config.get<string>('aiCoreServiceKey');
+    // const aiCoreServiceKey = config.get<string>('aiCoreServiceKey');
     const model = config.get<string>('aiModel');
 
     process.env.AICORE_SERVICE_KEY = aiCoreServiceKey;
@@ -21,7 +21,7 @@ export async function aiCoreChatCompletion(prompt: string): Promise<string> {
         ]
     });
 
-    const content = response.getContent();
+    const content = response.getContent;
 
     if (!content) {
         throw new Error('AI response is empty or undefined.');

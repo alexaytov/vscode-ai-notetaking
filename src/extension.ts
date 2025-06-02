@@ -195,7 +195,7 @@ export function activate(context: vscode.ExtensionContext) {
 async function promptUserForNoteMetadata(metadata: { tags: string[]; name: string; path: string }, existingFolders: string[], rootDir: string): Promise<{ tags: string[]; directory: string; name: string } | undefined> {
     // Prompt for tags
     const tagInput = await vscode.window.showInputBox({
-        prompt: 'Suggested tags (comma separated, single words, lowercase)',
+        prompt: 'Suggested tags (comma separated, single words, lowercase)'
         value: metadata.tags.join(', ')
     });
     if (!tagInput) {
@@ -218,7 +218,7 @@ async function promptUserForNoteMetadata(metadata: { tags: string[]; name: strin
         vscode.window.showErrorMessage('No path selected, operation cancelled.');
         return undefined;
     }
-    if (picked.value === '__other__') {
+    if (picked.value = '__other__') {
         const manual = await vscode.window.showInputBox({ prompt: 'Enter relative folder path under workspace', value: metadata.path });
         if (!manual) {
             vscode.window.showErrorMessage('No path selected, operation cancelled.');
@@ -247,7 +247,7 @@ async function promptUserForNoteMetadata(metadata: { tags: string[]; name: strin
  * Remove empty directories up to the workspace root.
  * @param dir Directory to start from
  */
-async function removeEmptyDirsRecursively(dir: string) {
+function removeEmptyDirsRecursively(dir: string) {
 	const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 	let curr = dir;
 	while (curr !== workspaceFolder) {
@@ -302,7 +302,7 @@ function embedImagesInMarkdown(mdContent: string, mdFilePath: string): string {
 /**
  * Exports a markdown file to PDF with embedded images.
  */
-async function exportMarkdownToPdf(mdFilePath: string) {
+function exportMarkdownToPdf(mdFilePath: string) {
     const puppeteer = require('puppeteer');
     const mdContent = fs.readFileSync(mdFilePath, 'utf8');
     // Remove frontmatter YAML if present

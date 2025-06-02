@@ -59,7 +59,7 @@ Note content:
     return { tags: [], name: '', path: '' };
 }
 
-async function aiCompletion(prompt: string): Promise<string> {
+async function aiCompletion(prompt: string | undefined): Promise<string> {
     const config = vscode.workspace.getConfiguration('ai-notes');
     const llmProvider = config.get<string>('llmProvider');
     const model = config.get<string>('aiModel');
@@ -67,7 +67,7 @@ async function aiCompletion(prompt: string): Promise<string> {
     if (llmProvider === 'sap-ai-core') {
         return aiCoreChatCompletion(prompt);
     } else if (llmProvider === 'vscode-lm-api') {
-        return vsCodeLMAPIChatCompletion(prompt, model || 'gpt-4.1');
+        return vsCodeLMAPIChatCompletion(prompt, model);
     } else {
         throw new Error('Unsupported LLM provider: ' + llmProvider);
     }
