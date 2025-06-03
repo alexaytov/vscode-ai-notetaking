@@ -1,6 +1,8 @@
 # Code Jam
 
 Presentation: https://sap-my.sharepoint.com/:p:/p/aleksandar_aytov/EVfbKuIpa6tKmQ_KhxoN6DsBIpbk169-yt1UH6Pk0FKAQg?e=BQhqZo
+
+
 Prompt Analyzer:https://ai-booth.cfapps.eu12.hana.ondemand.com/copilot-prompt-analyzer
 
 # Quickstart
