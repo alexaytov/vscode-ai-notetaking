@@ -17,7 +17,8 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
         this._view = webviewView;
         webviewView.webview.options = { enableScripts: true };
 
-        this.updateWebview(webviewView, '');
+        webviewView.webview.html = this.getHtmlForWebview({}, '');
+        this.updateWebview(webviewView, '').catch(() => {});
 
         webviewView.webview.onDidReceiveMessage(async message => {
             if (message.command === 'filter') {
