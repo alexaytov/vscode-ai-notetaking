@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { marked } from 'marked';
 import { execFile } from 'child_process';
 
@@ -94,8 +95,7 @@ export async function exportMarkdownToPdf(mdFilePath: string): Promise<void> {
 </body>
 </html>`;
 
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || path.dirname(mdFilePath);
-    const tmpHtml = path.join(workspaceFolder, '___tmp_export.html');
+    const tmpHtml = path.join(os.tmpdir(), `vscode-ai-notes-export-${Date.now()}.html`);
     const pdfPath = mdFilePath.replace(/\.md$/, '.pdf');
 
     fs.writeFileSync(tmpHtml, htmlContent, { encoding: 'utf8' });
@@ -108,7 +108,7 @@ export async function exportMarkdownToPdf(mdFilePath: string): Promise<void> {
                 '--no-sandbox',
                 `--print-to-pdf=${pdfPath}`,
                 '--print-to-pdf-no-header',
-                tmpHtml,
+                `file://${tmpHtml}`,
             ], { timeout: 30000 }, (error) => {
                 if (error) {
                     reject(error);
