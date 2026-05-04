@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 
 export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
@@ -16,12 +17,12 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
         this._view = webviewView;
         webviewView.webview.options = { enableScripts: true };
 
-        webviewView.webview.html = this.getHtmlForWebview('');
+        this.updateWebview(webviewView, '');
 
         webviewView.webview.onDidReceiveMessage(async message => {
             if (message.command === 'filter') {
                 const filter = message.text.trim();
-                webviewView.webview.html = this.getHtmlForWebview(filter);
+                await this.updateWebview(webviewView, filter);
             }
             if (message.command === 'openNote') {
                 const uri = vscode.Uri.file(message.path);
@@ -30,8 +31,12 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
         });
     }
 
-    private getHtmlForWebview(filter: string): string {
-        const notesByTag = this.getNotesByTagSync(filter);
+    private async updateWebview(webviewView: vscode.WebviewView, filter: string): Promise<void> {
+        const notesByTag = await this.getNotesByTag(filter);
+        webviewView.webview.html = this.getHtmlForWebview(notesByTag, filter);
+    }
+
+    private getHtmlForWebview(notesByTag: Record<string, string[]>, filter: string): string {
         const tags = Object.keys(notesByTag).sort();
         return `
             <style>
@@ -111,15 +116,15 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                 }
             </style>
             <div class="filter-bar">
-                <span class="icon-search">🔍</span>
+                <span class="icon-search">&#128269;</span>
                 <input id="filter" type="text" placeholder="Filter tags..." value="${filter}" />
                 <button id="expandAll" title="Expand all tags" style="margin-left:8px;">expand</button>
                 <button id="collapseAll" title="Collapse all tags" style="margin-left:2px;">collapse</button>
-                <button id="refreshTags" title="Refresh tags" style="margin-left:8px;">⟳</button>
+                <button id="refreshTags" title="Refresh tags" style="margin-left:8px;">&#10227;</button>
             </div>
             <div id="tags-list">
                 ${tags.length === 0 ? '<i>No tags found.</i>' : tags.map(tag => `
-                    <div class="tag collapsed" data-tag="${tag}"><span class="arrow">▼</span>${tag}</div>
+                    <div class="tag collapsed" data-tag="${tag}"><span class="arrow">&#9660;</span>${tag}</div>
                     <div class="notes" data-tag-notes="${tag.replace(/"/g, '&quot;')}" style="display:none;">
                         ${notesByTag[tag].map(note => `
                             <div class="note" data-path="${note}">${path.basename(note)}</div>
@@ -134,7 +139,6 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                 let lastSelectionStart = filterInput.selectionStart;
                 let lastSelectionEnd = filterInput.selectionEnd;
 
-                // Only send filter on Enter key
                 filterInput.addEventListener('keydown', e => {
                     if (e.key === 'Enter') {
                         lastSent = filterInput.value;
@@ -144,12 +148,10 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                     }
                 });
 
-                // Collapsible tags
                 document.querySelectorAll('.tag').forEach(function(tagEl) {
                     tagEl.addEventListener('click', function() {
                         var tag = tagEl.getAttribute('data-tag');
-                        var notesEl = document.querySelector('[data-tag-notes="' + tag.replace(/"/g, '\\"') + '"]');
-                        var arrow = tagEl.querySelector('.arrow');
+                        var notesEl = document.querySelector('[data-tag-notes="' + tag.replace(/"/g, '\\\\"') + '"]');
                         if (notesEl.style.display === 'none') {
                             notesEl.style.display = '';
                             tagEl.classList.remove('collapsed');
@@ -160,11 +162,10 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                     });
                 });
 
-                // Expand all/collapse all buttons
                 document.getElementById('expandAll').addEventListener('click', function() {
                     document.querySelectorAll('.tag').forEach(function(tagEl) {
                         var tag = tagEl.getAttribute('data-tag');
-                        var notesEl = document.querySelector('[data-tag-notes="' + tag.replace(/"/g, '\\"') + '"]');
+                        var notesEl = document.querySelector('[data-tag-notes="' + tag.replace(/"/g, '\\\\"') + '"]');
                         notesEl.style.display = '';
                         tagEl.classList.remove('collapsed');
                     });
@@ -172,17 +173,15 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                 document.getElementById('collapseAll').addEventListener('click', function() {
                     document.querySelectorAll('.tag').forEach(function(tagEl) {
                         var tag = tagEl.getAttribute('data-tag');
-                        var notesEl = document.querySelector('[data-tag-notes="' + tag.replace(/"/g, '\\"') + '"]');
+                        var notesEl = document.querySelector('[data-tag-notes="' + tag.replace(/"/g, '\\\\"') + '"]');
                         notesEl.style.display = 'none';
                         tagEl.classList.add('collapsed');
                     });
                 });
-                // Refresh button
                 document.getElementById('refreshTags').addEventListener('click', function() {
                     vscode.postMessage({ command: 'filter', text: filterInput.value, selectionStart: filterInput.selectionStart, selectionEnd: filterInput.selectionEnd });
                 });
 
-                // Restore focus and cursor position after HTML update
                 window.addEventListener('DOMContentLoaded', function() {
                     filterInput.focus();
                     var state = vscode.getState();
@@ -212,37 +211,48 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
         `;
     }
 
-    // Synchronous for simplicity; for large workspaces, use async and debounce/filter in JS
-    private getNotesByTagSync(filter: string): Record<string, string[]> {
+    private async getNotesByTag(filter: string): Promise<Record<string, string[]>> {
         const notesByTag: Record<string, string[]> = {};
-        function walk(dir: string) {
-            for (const file of fs.readdirSync(dir)) {
-                const fullPath = path.join(dir, file);
-                if (fs.statSync(fullPath).isDirectory()) {
-                    walk(fullPath);
-                } else if (file.endsWith('.md')) {
-                    const content = fs.readFileSync(fullPath, 'utf8');
-                    const match = content.match(/^---\n([\s\S]*?)\n---/);
-                    if (match) {
-                        const yaml = match[1];
-                        const tagsLine = yaml.split('\n').find(line => line.trim().startsWith('tags:'));
-                        if (tagsLine) {
-                            const tagsMatch = tagsLine.match(/\[(.*?)\]/);
-                            if (tagsMatch) {
-                                const tags = tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean);
-                                for (const tag of tags) {
-                                    if (!filter || tag.includes(filter)) {
-                                        if (!notesByTag[tag]) {notesByTag[tag] = [];}
-                                        notesByTag[tag].push(fullPath);
+
+        const walk = async (dir: string): Promise<void> => {
+            let entries: fs.Dirent[];
+            try {
+                entries = await fsp.readdir(dir, { withFileTypes: true });
+            } catch {
+                return;
+            }
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    await walk(fullPath);
+                } else if (entry.name.endsWith('.md')) {
+                    try {
+                        const content = await fsp.readFile(fullPath, 'utf8');
+                        const match = content.match(/^---\n([\s\S]*?)\n---/);
+                        if (match) {
+                            const yaml = match[1];
+                            const tagsLine = yaml.split('\n').find(line => line.trim().startsWith('tags:'));
+                            if (tagsLine) {
+                                const tagsMatch = tagsLine.match(/\[(.*?)\]/);
+                                if (tagsMatch) {
+                                    const tags = tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean);
+                                    for (const tag of tags) {
+                                        if (!filter || tag.includes(filter)) {
+                                            if (!notesByTag[tag]) { notesByTag[tag] = []; }
+                                            notesByTag[tag].push(fullPath);
+                                        }
                                     }
                                 }
                             }
                         }
+                    } catch {
+                        // skip unreadable files
                     }
                 }
             }
-        }
-        walk(this.workspaceRoot);
+        };
+
+        await walk(this.workspaceRoot);
         return notesByTag;
     }
 }
