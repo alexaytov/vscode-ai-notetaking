@@ -122,7 +122,6 @@
   "dependencies": {
     "@sap-ai-sdk/foundation-models": "^1.13.0",
     "marked": "^15.0.12",
-    "puppeteer": "^24.9.0",
     "uuid": "^11.1.0"
   }
 }
