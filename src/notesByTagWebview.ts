@@ -48,7 +48,7 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
         webviewView.webview.html = this.getHtmlForWebview(notesByTag, filter);
     }
 
-    private getHtmlForWebview(notesByTag: Record<string, string[]>, filter: string): string {
+    private getHtmlForWebview(notesByTag: Record<string, Array<{ path: string; summary: string | null }>>, filter: string): string {
         const tags = Object.keys(notesByTag).sort();
         return `
             <style>
@@ -126,6 +126,15 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                 #expandAll:hover, #collapseAll:hover, #refreshTags:hover {
                     background: var(--vscode-button-hoverBackground);
                 }
+                .note-summary {
+                    font-size: 0.85em;
+                    opacity: 0.7;
+                    margin-left: 1.5em;
+                    margin-top: 1px;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
                 .note-checkbox {
                     margin-right: 6px;
                     cursor: pointer;
@@ -169,7 +178,7 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                     <div class="tag collapsed" data-tag="${escapeHtml(tag)}"><span class="arrow">&#9660;</span>${escapeHtml(tag)}</div>
                     <div class="notes" data-tag-notes="${escapeHtml(tag)}" style="display:none;">
                         ${notesByTag[tag].map(note => `
-                            <div class="note" data-path="${escapeHtml(note)}"><input type="checkbox" class="note-checkbox" data-path="${escapeHtml(note)}" />${escapeHtml(path.basename(note))}</div>
+                            <div class="note" data-path="${escapeHtml(note.path)}"><input type="checkbox" class="note-checkbox" data-path="${escapeHtml(note.path)}" />${escapeHtml(path.basename(note.path))}${note.summary ? `<div class="note-summary">${escapeHtml(note.summary.length > 80 ? note.summary.slice(0, 80) + '...' : note.summary)}</div>` : ''}</div>
                         `).join('')}
                     </div>
                 `).join('')}
@@ -299,8 +308,8 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
         `;
     }
 
-    private async getNotesByTag(filter: string): Promise<Record<string, string[]>> {
-        const notesByTag: Record<string, string[]> = {};
+    private async getNotesByTag(filter: string): Promise<Record<string, Array<{ path: string; summary: string | null }>>> {
+        const notesByTag: Record<string, Array<{ path: string; summary: string | null }>> = {};
 
         const walk = async (dir: string): Promise<void> => {
             let entries: fs.Dirent[];
@@ -325,10 +334,16 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                                 const tagsMatch = tagsLine.match(/\[(.*?)\]/);
                                 if (tagsMatch) {
                                     const tags = tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean);
+                                    const summaryLine = yaml.split('\n').find(line => line.trim().startsWith('summary:'));
+                                    let summary: string | null = null;
+                                    if (summaryLine) {
+                                        const sMatch = summaryLine.match(/^summary:\s*"?([^"]*)"?\s*$/);
+                                        if (sMatch && sMatch[1]) { summary = sMatch[1].trim(); }
+                                    }
                                     for (const tag of tags) {
                                         if (!filter || tag.includes(filter)) {
                                             if (!notesByTag[tag]) { notesByTag[tag] = []; }
-                                            notesByTag[tag].push(fullPath);
+                                            notesByTag[tag].push({ path: fullPath, summary });
                                         }
                                     }
                                 }
