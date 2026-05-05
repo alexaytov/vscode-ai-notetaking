@@ -21,6 +21,7 @@ import { gatherNotes, searchNotes } from './semanticSearch';
 import { loadCollections, saveCollections, runCollection, Collection } from './smartCollections';
 import { mergeNotes } from './noteMerger';
 import { generateMOC } from './mocGenerator';
+import { GraphWebviewProvider } from './graphWebview';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -485,6 +486,21 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
     context.subscriptions.push(generateMOCDisposable);
+
+    // Knowledge graph command
+    let graphProvider: GraphWebviewProvider | undefined;
+    const showGraphDisposable = vscode.commands.registerCommand('ai-notes.showGraph', async () => {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            vscode.window.showErrorMessage('No workspace folder open.');
+            return;
+        }
+        if (!graphProvider) {
+            graphProvider = new GraphWebviewProvider(workspaceFolders[0].uri.fsPath, context.extensionPath);
+        }
+        await graphProvider.show();
+    });
+    context.subscriptions.push(showGraphDisposable);
 }
 
 async function bulkReclassifyNotes(paths: string[], rootDir: string): Promise<void> {
