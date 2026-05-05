@@ -139,10 +139,14 @@ export function activate(context: vscode.ExtensionContext) {
 	// Register the test input webview view
 	const workspaceFolders = vscode.workspace.workspaceFolders;
 	if (workspaceFolders) {
+		const notesByTagProvider = new NotesByTagWebviewProvider(workspaceFolders[0].uri.fsPath);
+		notesByTagProvider.onBulkReclassify = (paths) => {
+			bulkReclassifyNotes(paths, workspaceFolders[0].uri.fsPath);
+		};
 		context.subscriptions.push(
 			vscode.window.registerWebviewViewProvider(
 				NotesByTagWebviewProvider.viewType,
-				new NotesByTagWebviewProvider(workspaceFolders[0].uri.fsPath)
+				notesByTagProvider
 			)
 		);
 
@@ -201,6 +205,39 @@ export function activate(context: vscode.ExtensionContext) {
 		await vscode.commands.executeCommand('revealFileInOS', fileUri);
 	});
 	context.subscriptions.push(revealInFinderDisposable);
+}
+
+async function bulkReclassifyNotes(paths: string[], rootDir: string): Promise<void> {
+    await vscode.window.withProgress(
+        {
+            location: vscode.ProgressLocation.Notification,
+            title: 'Bulk Reclassify',
+            cancellable: true,
+        },
+        async (progress, token) => {
+            for (let i = 0; i < paths.length; i++) {
+                if (token.isCancellationRequested) { break; }
+
+                const notePath = paths[i];
+                progress.report({
+                    message: `Processing ${i + 1} of ${paths.length}: ${path.basename(notePath)}`,
+                    increment: (1 / paths.length) * 100,
+                });
+
+                try {
+                    const doc = await vscode.workspace.openTextDocument(notePath);
+                    await classifyAndMoveNote(doc, rootDir);
+                } catch (err: any) {
+                    const action = await vscode.window.showWarningMessage(
+                        `Failed to classify ${path.basename(notePath)}: ${err.message}`,
+                        'Continue',
+                        'Stop'
+                    );
+                    if (action === 'Stop') { break; }
+                }
+            }
+        }
+    );
 }
 
 async function classifyAndMoveNote(doc: vscode.TextDocument, rootDir: string): Promise<void> {
