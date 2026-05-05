@@ -3,6 +3,10 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 
+function escapeHtml(str: string): string {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
 export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'aiNotesByTagWebView';
     private _view?: vscode.WebviewView;
@@ -152,7 +156,7 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
             </style>
             <div class="filter-bar">
                 <span class="icon-search">&#128269;</span>
-                <input id="filter" type="text" placeholder="Filter tags..." value="${filter}" />
+                <input id="filter" type="text" placeholder="Filter tags..." value="${escapeHtml(filter)}" />
                 <button id="expandAll" title="Expand all tags" style="margin-left:8px;">expand</button>
                 <button id="collapseAll" title="Collapse all tags" style="margin-left:2px;">collapse</button>
                 <button id="refreshTags" title="Refresh tags" style="margin-left:8px;">&#10227;</button>
@@ -162,10 +166,10 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
             </div>
             <div id="tags-list">
                 ${tags.length === 0 ? '<i>No tags found.</i>' : tags.map(tag => `
-                    <div class="tag collapsed" data-tag="${tag}"><span class="arrow">&#9660;</span>${tag}</div>
-                    <div class="notes" data-tag-notes="${tag.replace(/"/g, '&quot;')}" style="display:none;">
+                    <div class="tag collapsed" data-tag="${escapeHtml(tag)}"><span class="arrow">&#9660;</span>${escapeHtml(tag)}</div>
+                    <div class="notes" data-tag-notes="${escapeHtml(tag)}" style="display:none;">
                         ${notesByTag[tag].map(note => `
-                            <div class="note" data-path="${note}"><input type="checkbox" class="note-checkbox" data-path="${note}" />${path.basename(note)}</div>
+                            <div class="note" data-path="${escapeHtml(note)}"><input type="checkbox" class="note-checkbox" data-path="${escapeHtml(note)}" />${escapeHtml(path.basename(note))}</div>
                         `).join('')}
                     </div>
                 `).join('')}
@@ -305,10 +309,11 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
             } catch {
                 return;
             }
+            const excludedDirs = new Set(['.git', 'node_modules', '.vscode', '.claude']);
             for (const entry of entries) {
                 const fullPath = path.join(dir, entry.name);
                 if (entry.isDirectory()) {
-                    await walk(fullPath);
+                    if (!excludedDirs.has(entry.name)) { await walk(fullPath); }
                 } else if (entry.name.endsWith('.md')) {
                     try {
                         const content = await fsp.readFile(fullPath, 'utf8');

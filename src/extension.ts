@@ -152,7 +152,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Tag autocomplete
 		const tagCache = new TagCache(workspaceFolders[0].uri.fsPath);
-		tagCache.initialize();
+		tagCache.initialize().catch(() => {});
 		context.subscriptions.push(tagCache);
 		context.subscriptions.push(
 			vscode.languages.registerCompletionItemProvider(
@@ -172,7 +172,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Backlinks panel
 		const backlinksProvider = new BacklinksWebviewProvider(workspaceFolders[0].uri.fsPath);
-		backlinksProvider.initialize();
+		backlinksProvider.initialize().catch(() => {});
 		context.subscriptions.push(
 			vscode.window.registerWebviewViewProvider(
 				BacklinksWebviewProvider.viewType,

@@ -2,6 +2,10 @@ import * as vscode from 'vscode';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 
+function escapeHtml(str: string): string {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
 export interface MarkdownLink {
     text: string;
     href: string;
@@ -121,9 +125,9 @@ export class BacklinksWebviewProvider implements vscode.WebviewViewProvider {
         }
         const items = backlinks.map(b => {
             const name = path.basename(b.fromFile);
-            return `<div class="backlink" data-path="${b.fromFile}" style="cursor:pointer; padding:4px 8px; border-radius:3px; margin:2px 0;">
-                <span style="color:var(--vscode-textLink-foreground);">${name}</span>
-                <span style="opacity:0.7; font-size:0.9em;"> — "${b.linkText}"</span>
+            return `<div class="backlink" data-path="${escapeHtml(b.fromFile)}" style="cursor:pointer; padding:4px 8px; border-radius:3px; margin:2px 0;">
+                <span style="color:var(--vscode-textLink-foreground);">${escapeHtml(name)}</span>
+                <span style="opacity:0.7; font-size:0.9em;"> — "${escapeHtml(b.linkText)}"</span>
             </div>`;
         }).join('');
 
