@@ -6,6 +6,7 @@ import * as path from 'path';
 export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'aiNotesByTagWebView';
     private _view?: vscode.WebviewView;
+    public onBulkReclassify?: (paths: string[]) => void;
 
     constructor(private workspaceRoot: string) {}
 
@@ -28,6 +29,12 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
             if (message.command === 'openNote') {
                 const uri = vscode.Uri.file(message.path);
                 vscode.window.showTextDocument(uri);
+            }
+            if (message.command === 'bulkReclassify') {
+                const paths: string[] = message.paths;
+                if (this.onBulkReclassify) {
+                    this.onBulkReclassify(paths);
+                }
             }
         });
     }
@@ -115,6 +122,33 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                 #expandAll:hover, #collapseAll:hover, #refreshTags:hover {
                     background: var(--vscode-button-hoverBackground);
                 }
+                .note-checkbox {
+                    margin-right: 6px;
+                    cursor: pointer;
+                }
+                #bulkReclassify {
+                    background: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 10px;
+                    font-size: 0.95em;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                    display: none;
+                }
+                #bulkReclassify:hover {
+                    background: var(--vscode-button-hoverBackground);
+                }
+                #selectAll, #deselectAll {
+                    background: none;
+                    color: var(--vscode-textLink-foreground);
+                    border: none;
+                    font-size: 0.85em;
+                    cursor: pointer;
+                    padding: 2px 6px;
+                    display: none;
+                }
             </style>
             <div class="filter-bar">
                 <span class="icon-search">&#128269;</span>
@@ -122,13 +156,16 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                 <button id="expandAll" title="Expand all tags" style="margin-left:8px;">expand</button>
                 <button id="collapseAll" title="Collapse all tags" style="margin-left:2px;">collapse</button>
                 <button id="refreshTags" title="Refresh tags" style="margin-left:8px;">&#10227;</button>
+                <button id="bulkReclassify" title="Reclassify selected notes" style="margin-left:8px;">Reclassify Selected (<span id="selCount">0</span>)</button>
+                <button id="selectAll" style="margin-left:4px;">Select All</button>
+                <button id="deselectAll" style="margin-left:2px;">Deselect All</button>
             </div>
             <div id="tags-list">
                 ${tags.length === 0 ? '<i>No tags found.</i>' : tags.map(tag => `
                     <div class="tag collapsed" data-tag="${tag}"><span class="arrow">&#9660;</span>${tag}</div>
                     <div class="notes" data-tag-notes="${tag.replace(/"/g, '&quot;')}" style="display:none;">
                         ${notesByTag[tag].map(note => `
-                            <div class="note" data-path="${note}">${path.basename(note)}</div>
+                            <div class="note" data-path="${note}"><input type="checkbox" class="note-checkbox" data-path="${note}" />${path.basename(note)}</div>
                         `).join('')}
                     </div>
                 `).join('')}
@@ -203,11 +240,57 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                     }
                 });
 
+                const selectedNotes = new Set();
+
+                function updateSelectionUI() {
+                    const count = selectedNotes.size;
+                    document.getElementById('selCount').textContent = count;
+                    document.getElementById('bulkReclassify').style.display = count > 0 ? 'inline-block' : 'none';
+                    document.getElementById('selectAll').style.display = 'inline-block';
+                    document.getElementById('deselectAll').style.display = count > 0 ? 'inline-block' : 'none';
+                }
+
+                document.querySelectorAll('.note-checkbox').forEach(function(cb) {
+                    cb.addEventListener('change', function(e) {
+                        e.stopPropagation();
+                        var notePath = cb.getAttribute('data-path');
+                        if (cb.checked) {
+                            selectedNotes.add(notePath);
+                        } else {
+                            selectedNotes.delete(notePath);
+                        }
+                        updateSelectionUI();
+                    });
+                });
+
                 document.querySelectorAll('.note').forEach(function(el) {
-                    el.addEventListener('click', function() {
+                    el.addEventListener('click', function(e) {
+                        if (e.target.classList.contains('note-checkbox')) { return; }
                         vscode.postMessage({ command: 'openNote', path: el.getAttribute('data-path') });
                     });
                 });
+
+                document.getElementById('selectAll').addEventListener('click', function() {
+                    document.querySelectorAll('.note-checkbox').forEach(function(cb) {
+                        cb.checked = true;
+                        selectedNotes.add(cb.getAttribute('data-path'));
+                    });
+                    updateSelectionUI();
+                });
+
+                document.getElementById('deselectAll').addEventListener('click', function() {
+                    document.querySelectorAll('.note-checkbox').forEach(function(cb) {
+                        cb.checked = false;
+                    });
+                    selectedNotes.clear();
+                    updateSelectionUI();
+                });
+
+                document.getElementById('bulkReclassify').addEventListener('click', function() {
+                    vscode.postMessage({ command: 'bulkReclassify', paths: Array.from(selectedNotes) });
+                });
+
+                updateSelectionUI();
             </script>
         `;
     }
