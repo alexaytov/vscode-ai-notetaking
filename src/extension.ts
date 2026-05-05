@@ -17,6 +17,7 @@ import { BacklinksWebviewProvider } from './backlinksWebview';
 import { RelatedNotesWebviewProvider } from './relatedNotesWebview';
 import { generateSummary } from './summaries';
 import { gatherNotes, searchNotes } from './semanticSearch';
+import { loadCollections, saveCollections, runCollection, Collection } from './smartCollections';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -292,6 +293,110 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 	context.subscriptions.push(semanticSearchDisposable);
+
+    // Smart collections command
+    const smartCollectionsDisposable = vscode.commands.registerCommand('ai-notes.smartCollections', async () => {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            vscode.window.showErrorMessage('No workspace folder open.');
+            return;
+        }
+        const rootDir = workspaceFolders[0].uri.fsPath;
+
+        const collections = await loadCollections(rootDir);
+        const items: vscode.QuickPickItem[] = [
+            ...collections.map(c => ({
+                label: c.name,
+                description: [
+                    c.tags ? `tags: ${c.tags.join(', ')}` : '',
+                    c.dateRange ? `last ${c.dateRange} days` : '',
+                    c.query ? `query: "${c.query}"` : '',
+                ].filter(Boolean).join(' | '),
+            })),
+            { label: '$(add) New Collection...', description: 'Create a new saved collection' },
+            ...(collections.length > 0 ? [{ label: '$(trash) Delete Collection...', description: 'Remove a saved collection' }] : []),
+        ];
+
+        const picked = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Select a collection to run, or create a new one',
+        });
+        if (!picked) { return; }
+
+        if (picked.label === '$(add) New Collection...') {
+            const name = await vscode.window.showInputBox({ prompt: 'Collection name' });
+            if (!name) { return; }
+
+            const tagsInput = await vscode.window.showInputBox({
+                prompt: 'Filter by tags (comma-separated, leave empty to skip)',
+                placeHolder: 'meeting, team',
+            });
+            const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(Boolean) : null;
+
+            const dateInput = await vscode.window.showInputBox({
+                prompt: 'Filter by date range (number of days, leave empty to skip)',
+                placeHolder: '14',
+            });
+            const dateRange = dateInput ? parseInt(dateInput) : null;
+
+            const query = await vscode.window.showInputBox({
+                prompt: 'Semantic query (leave empty to skip)',
+                placeHolder: 'authentication and security',
+            });
+
+            const newCollection: Collection = {
+                name,
+                tags: tags && tags.length > 0 ? tags : null,
+                dateRange: dateRange && !isNaN(dateRange) ? dateRange : null,
+                query: query || null,
+            };
+
+            collections.push(newCollection);
+            await saveCollections(rootDir, collections);
+            vscode.window.showInformationMessage(`Collection "${name}" created.`);
+            return;
+        }
+
+        if (picked.label === '$(trash) Delete Collection...') {
+            const toDelete = await vscode.window.showQuickPick(
+                collections.map(c => ({ label: c.name })),
+                { placeHolder: 'Select collection to delete' }
+            );
+            if (!toDelete) { return; }
+            const updated = collections.filter(c => c.name !== toDelete.label);
+            await saveCollections(rootDir, updated);
+            vscode.window.showInformationMessage(`Collection "${toDelete.label}" deleted.`);
+            return;
+        }
+
+        // Run the selected collection
+        const collection = collections.find(c => c.name === picked.label);
+        if (!collection) { return; }
+
+        const results = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: `Running "${collection.name}"...` },
+            () => runCollection(collection, rootDir)
+        );
+
+        if (results.length === 0) {
+            vscode.window.showInformationMessage('No notes match this collection.');
+            return;
+        }
+
+        const resultItems = results.map(filePath => ({
+            label: path.basename(filePath),
+            description: path.relative(rootDir, filePath),
+            detail: filePath,
+        }));
+
+        const selected = await vscode.window.showQuickPick(resultItems, {
+            placeHolder: `${results.length} notes in "${collection.name}"`,
+        });
+        if (selected) {
+            const uri = vscode.Uri.file(selected.detail!);
+            await vscode.window.showTextDocument(uri);
+        }
+    });
+    context.subscriptions.push(smartCollectionsDisposable);
 }
 
 async function bulkReclassifyNotes(paths: string[], rootDir: string): Promise<void> {

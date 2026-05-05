@@ -111,6 +111,10 @@
       {
         "command": "ai-notes.semanticSearch",
         "title": "AI Notes: Search Notes"
+      },
+      {
+        "command": "ai-notes.smartCollections",
+        "title": "AI Notes: Smart Collections"
       }
     ]
   },
