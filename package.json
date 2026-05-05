@@ -102,6 +102,10 @@
       {
         "command": "ai-notes.generateSummary",
         "title": "AI Notes: Generate Summary"
+      },
+      {
+        "command": "ai-notes.semanticSearch",
+        "title": "AI Notes: Search Notes"
       }
     ]
   },

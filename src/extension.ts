@@ -15,6 +15,7 @@ import { discoverTemplates, loadTemplateContent, expandTemplateVariables } from 
 import { AutoClassifyWatcher } from './autoClassify';
 import { BacklinksWebviewProvider } from './backlinksWebview';
 import { generateSummary } from './summaries';
+import { gatherNotes, searchNotes } from './semanticSearch';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -234,6 +235,51 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 	context.subscriptions.push(generateSummaryDisposable);
+
+	// Semantic search command
+	const semanticSearchDisposable = vscode.commands.registerCommand('ai-notes.semanticSearch', async () => {
+		const workspaceFolders = vscode.workspace.workspaceFolders;
+		if (!workspaceFolders) {
+			vscode.window.showErrorMessage('No workspace folder open.');
+			return;
+		}
+
+		const query = await vscode.window.showInputBox({
+			prompt: 'What are you looking for?',
+			placeHolder: 'Search your notes by meaning...',
+		});
+		if (!query) { return; }
+
+		const rootDir = workspaceFolders[0].uri.fsPath;
+
+		const results = await vscode.window.withProgress(
+			{ location: vscode.ProgressLocation.Notification, title: 'Searching notes...' },
+			async () => {
+				const notes = await gatherNotes(rootDir);
+				return searchNotes(query, notes);
+			}
+		);
+
+		if (results.length === 0) {
+			vscode.window.showInformationMessage('No matching notes found.');
+			return;
+		}
+
+		const items = results.map(filePath => ({
+			label: path.basename(filePath),
+			description: path.relative(rootDir, filePath),
+			detail: filePath,
+		}));
+
+		const selected = await vscode.window.showQuickPick(items, {
+			placeHolder: `Found ${items.length} matching notes`,
+		});
+		if (selected) {
+			const uri = vscode.Uri.file(selected.detail!);
+			await vscode.window.showTextDocument(uri);
+		}
+	});
+	context.subscriptions.push(semanticSearchDisposable);
 }
 
 async function bulkReclassifyNotes(paths: string[], rootDir: string): Promise<void> {
