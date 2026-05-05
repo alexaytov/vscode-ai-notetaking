@@ -12,6 +12,7 @@ import { exportMarkdownToPdf } from './pdf-export';
 import { TagCache } from './tagCache';
 import { TagCompletionProvider } from './tagCompletionProvider';
 import { discoverTemplates, loadTemplateContent, expandTemplateVariables } from './templates';
+import { AutoClassifyWatcher } from './autoClassify';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -70,48 +71,6 @@ export function activate(context: vscode.ExtensionContext) {
 		const doc = await vscode.workspace.openTextDocument(fileUri);
 		await vscode.window.showTextDocument(doc);
 
-		// Listen for save and move/rename after AI categorization
-		const saveListener = vscode.workspace.onDidSaveTextDocument(async (savedDoc) => {
-			if (savedDoc.uri.fsPath === filePath) {
-				saveListener.dispose();
-
-				const content = savedDoc.getText();
-				const existingFolders = await getAllFolders(rootDir, 3);
-
-				const metadata = await generateNoteMetadata(content, existingFolders);
-				if (!metadata || !metadata.tags || !metadata.name || !metadata.path) {
-					vscode.window.showErrorMessage('AI categorization failed, please try again.');
-					return;
-				}
-
-				const userMetadata = await promptUserForNoteMetadata(metadata, existingFolders, rootDir);
-				if (!userMetadata) {
-					return;
-				}
-
-				const { tags, directory, name } = userMetadata;
-
-				// Make sure the path exists
-				if (!fs.existsSync(directory)) {
-					fs.mkdirSync(directory, { recursive: true });
-				}
-
-				const formattedDate = formatDateDDMMYYYY(Date.now());
-				const newFileName = `${name}_${formattedDate}.md`;
-				const newFilePath = path.join(directory, newFileName);
-				const newFileUri = vscode.Uri.file(newFilePath);
-
-				const yaml = `---\ntags: [${tags.join(', ')}]\n---\n`;
-				const edit = new vscode.WorkspaceEdit();
-				edit.insert(savedDoc.uri, new vscode.Position(0, 0), yaml);
-				await vscode.workspace.applyEdit(edit);
-				await savedDoc.save();
-
-				await vscode.workspace.fs.rename(savedDoc.uri, newFileUri, { overwrite: false });
-				await vscode.window.showTextDocument(newFileUri);
-			}
-		});
-		context.subscriptions.push(saveListener);
 	});
 
 	const reclassifyNoteDisposable = vscode.commands.registerCommand('ai-notes.reclassifyNote', async () => {
@@ -197,6 +156,14 @@ export function activate(context: vscode.ExtensionContext) {
 				',', ' '
 			)
 		);
+
+		// Auto-classify on save in _drafts/
+		const draftsDir = path.join(workspaceFolders[0].uri.fsPath, '_drafts');
+		const autoClassify = new AutoClassifyWatcher(draftsDir, async (doc) => {
+			await classifyAndMoveNote(doc, workspaceFolders[0].uri.fsPath);
+		});
+		autoClassify.start();
+		context.subscriptions.push(autoClassify);
 	}
 
 	// Register the export to PDF command
@@ -222,6 +189,38 @@ export function activate(context: vscode.ExtensionContext) {
 		await vscode.commands.executeCommand('revealFileInOS', fileUri);
 	});
 	context.subscriptions.push(revealInFinderDisposable);
+}
+
+async function classifyAndMoveNote(doc: vscode.TextDocument, rootDir: string): Promise<void> {
+    const content = doc.getText();
+    const yamlRegex = /^---\n(?:.*\n)*?---\n/;
+    const cleanedContent = content.replace(yamlRegex, '');
+
+    const existingFolders = await getAllFolders(rootDir, 3);
+    const metadata = await generateNoteMetadata(cleanedContent, existingFolders);
+
+    if (!metadata || !metadata.tags || !metadata.name || !metadata.path) {
+        vscode.window.showErrorMessage('AI categorization failed, please try again.');
+        return;
+    }
+
+    const userMetadata = await promptUserForNoteMetadata(metadata, existingFolders, rootDir);
+    if (!userMetadata) { return; }
+
+    const { tags, directory, name } = userMetadata;
+
+    if (!fs.existsSync(directory)) {
+        fs.mkdirSync(directory, { recursive: true });
+    }
+
+    const formattedDate = formatDateDDMMYYYY(Date.now());
+    const newFileName = `${name}_${formattedDate}.md`;
+    const newFilePath = path.join(directory, newFileName);
+    const newFileUri = vscode.Uri.file(newFilePath);
+
+    await upsertFrontmatterKey(doc, 'tags', tags);
+    await vscode.workspace.fs.rename(doc.uri, newFileUri, { overwrite: false });
+    await vscode.window.showTextDocument(newFileUri);
 }
 
 /**
