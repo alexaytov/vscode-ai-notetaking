@@ -119,6 +119,10 @@
       {
         "command": "ai-notes.mergeNotes",
         "title": "AI Notes: Merge Notes"
+      },
+      {
+        "command": "ai-notes.generateMOC",
+        "title": "AI Notes: Generate Map of Content"
       }
     ]
   },

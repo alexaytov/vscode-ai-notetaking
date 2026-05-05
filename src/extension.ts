@@ -19,6 +19,7 @@ import { generateSummary } from './summaries';
 import { gatherNotes, searchNotes } from './semanticSearch';
 import { loadCollections, saveCollections, runCollection, Collection } from './smartCollections';
 import { mergeNotes } from './noteMerger';
+import { generateMOC } from './mocGenerator';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -452,6 +453,28 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
     context.subscriptions.push(mergeNotesDisposable);
+
+    // Generate MOC command
+    const generateMOCDisposable = vscode.commands.registerCommand('ai-notes.generateMOC', async () => {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            vscode.window.showErrorMessage('No workspace folder open.');
+            return;
+        }
+
+        try {
+            const indexPath = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Generating Map of Content...' },
+                () => generateMOC(workspaceFolders[0].uri.fsPath)
+            );
+            const uri = vscode.Uri.file(indexPath);
+            await vscode.window.showTextDocument(uri);
+            vscode.window.showInformationMessage('Map of Content generated.');
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`MOC generation failed: ${err.message}`);
+        }
+    });
+    context.subscriptions.push(generateMOCDisposable);
 }
 
 async function bulkReclassifyNotes(paths: string[], rootDir: string): Promise<void> {
