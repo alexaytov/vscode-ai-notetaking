@@ -11,6 +11,7 @@ import { NotesByTagWebviewProvider } from './notesByTagWebview';
 import { exportMarkdownToPdf } from './pdf-export';
 import { TagCache } from './tagCache';
 import { TagCompletionProvider } from './tagCompletionProvider';
+import { discoverTemplates, loadTemplateContent, expandTemplateVariables } from './templates';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -38,12 +39,34 @@ export function activate(context: vscode.ExtensionContext) {
 			fs.mkdirSync(draftsDir, { recursive: true });
 		}
 
+		// Template selection
+		const templates = await discoverTemplates(context.extensionPath, rootDir);
+		const items: vscode.QuickPickItem[] = [
+			{ label: 'Blank note', description: 'Start with an empty file' },
+			...templates.map(t => ({
+				label: t.name,
+				description: t.source === 'built-in' ? 'Built-in template' : 'Workspace template',
+				detail: t.filePath,
+			})),
+		];
+
+		const selected = await vscode.window.showQuickPick(items, {
+			placeHolder: 'Choose a template for your new note',
+		});
+		if (!selected) { return; }
+
+		let initialContent = '';
+		if (selected.detail) {
+			const raw = await loadTemplateContent(selected.detail);
+			initialContent = expandTemplateVariables(raw);
+		}
+
 		const guid = uuidv4();
 		const fileName = `${formatDateDDMMYYYY(Date.now())}_${guid}.md`;
 		const filePath = path.join(draftsDir, fileName);
 		const fileUri = vscode.Uri.file(filePath);
 
-		await vscode.workspace.fs.writeFile(fileUri, Buffer.from('', 'utf8'));
+		await vscode.workspace.fs.writeFile(fileUri, Buffer.from(initialContent, 'utf8'));
 		const doc = await vscode.workspace.openTextDocument(fileUri);
 		await vscode.window.showTextDocument(doc);
 
