@@ -14,6 +14,7 @@ import { TagCompletionProvider } from './tagCompletionProvider';
 import { discoverTemplates, loadTemplateContent, expandTemplateVariables } from './templates';
 import { AutoClassifyWatcher } from './autoClassify';
 import { BacklinksWebviewProvider } from './backlinksWebview';
+import { RelatedNotesWebviewProvider } from './relatedNotesWebview';
 import { generateSummary } from './summaries';
 import { gatherNotes, searchNotes } from './semanticSearch';
 
@@ -182,6 +183,17 @@ export function activate(context: vscode.ExtensionContext) {
 			)
 		);
 		context.subscriptions.push(backlinksProvider);
+
+		// Related notes panel
+		const relatedNotesProvider = new RelatedNotesWebviewProvider(workspaceFolders[0].uri.fsPath, tagCache);
+		relatedNotesProvider.initialize();
+		context.subscriptions.push(
+			vscode.window.registerWebviewViewProvider(
+				RelatedNotesWebviewProvider.viewType,
+				relatedNotesProvider
+			)
+		);
+		context.subscriptions.push(relatedNotesProvider);
 	}
 
 	// Register the export to PDF command
