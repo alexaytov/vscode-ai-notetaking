@@ -98,6 +98,10 @@
           "light": "resources/light/explorer.svg",
           "dark": "resources/dark/explorer.svg"
         }
+      },
+      {
+        "command": "ai-notes.generateSummary",
+        "title": "AI Notes: Generate Summary"
       }
     ]
   },

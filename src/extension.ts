@@ -14,6 +14,7 @@ import { TagCompletionProvider } from './tagCompletionProvider';
 import { discoverTemplates, loadTemplateContent, expandTemplateVariables } from './templates';
 import { AutoClassifyWatcher } from './autoClassify';
 import { BacklinksWebviewProvider } from './backlinksWebview';
+import { generateSummary } from './summaries';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -205,6 +206,34 @@ export function activate(context: vscode.ExtensionContext) {
 		await vscode.commands.executeCommand('revealFileInOS', fileUri);
 	});
 	context.subscriptions.push(revealInFinderDisposable);
+
+	// Generate summary command
+	const generateSummaryDisposable = vscode.commands.registerCommand('ai-notes.generateSummary', async () => {
+		const editor = vscode.window.activeTextEditor;
+		if (!editor || !editor.document.fileName.endsWith('.md')) {
+			vscode.window.showErrorMessage('No Markdown file open.');
+			return;
+		}
+
+		const doc = editor.document;
+		const content = doc.getText();
+		const yamlRegex = /^---\n(?:.*\n)*?---\n/;
+		const cleanedContent = content.replace(yamlRegex, '');
+
+		if (cleanedContent.trim().length === 0) {
+			vscode.window.showErrorMessage('Note has no content to summarize.');
+			return;
+		}
+
+		try {
+			const summary = await generateSummary(cleanedContent);
+			await upsertFrontmatterKey(doc, 'summary', `"${summary}"`);
+			vscode.window.showInformationMessage(`Summary generated: ${summary}`);
+		} catch (err: any) {
+			vscode.window.showErrorMessage(`Summary generation failed: ${err.message}`);
+		}
+	});
+	context.subscriptions.push(generateSummaryDisposable);
 }
 
 async function bulkReclassifyNotes(paths: string[], rootDir: string): Promise<void> {
