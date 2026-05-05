@@ -22,6 +22,7 @@ import { loadCollections, saveCollections, runCollection, Collection } from './s
 import { mergeNotes } from './noteMerger';
 import { generateMOC } from './mocGenerator';
 import { GraphWebviewProvider } from './graphWebview';
+import { exportSite } from './siteExporter';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -501,6 +502,28 @@ export function activate(context: vscode.ExtensionContext) {
         await graphProvider.show();
     });
     context.subscriptions.push(showGraphDisposable);
+
+    // Export static site command
+    const exportSiteDisposable = vscode.commands.registerCommand('ai-notes.exportSite', async () => {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            vscode.window.showErrorMessage('No workspace folder open.');
+            return;
+        }
+
+        try {
+            const siteDir = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Exporting static site...' },
+                () => exportSite(workspaceFolders[0].uri.fsPath, context.extensionPath)
+            );
+            const indexUri = vscode.Uri.file(path.join(siteDir, 'index.html'));
+            await vscode.window.showTextDocument(indexUri);
+            vscode.window.showInformationMessage(`Static site exported to _site/`);
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`Site export failed: ${err.message}`);
+        }
+    });
+    context.subscriptions.push(exportSiteDisposable);
 }
 
 async function bulkReclassifyNotes(paths: string[], rootDir: string): Promise<void> {

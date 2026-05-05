@@ -132,6 +132,10 @@
       {
         "command": "ai-notes.showGraph",
         "title": "AI Notes: Show Knowledge Graph"
+      },
+      {
+        "command": "ai-notes.exportSite",
+        "title": "AI Notes: Export as Static Site"
       }
     ]
   },
