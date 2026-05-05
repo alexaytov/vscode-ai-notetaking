@@ -100,7 +100,7 @@ async function vsCodeLMAPIChatCompletion(prompt: string, aiModel: string): Promi
     }
 }
 
-async function chatCompletionWithRetry(prompt: string, retries = 3): Promise<string> {
+export async function chatCompletionWithRetry(prompt: string, retries = 3): Promise<string> {
     for (let attempt = 0; attempt < retries; attempt++) {
         try {
             return await aiCompletion(prompt);
