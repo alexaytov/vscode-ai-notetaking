@@ -9,6 +9,8 @@ import { generateNoteMetadata } from './ai';
 import { upsertFrontmatterKey } from './frontmatter';
 import { NotesByTagWebviewProvider } from './notesByTagWebview';
 import { exportMarkdownToPdf } from './pdf-export';
+import { TagCache } from './tagCache';
+import { TagCompletionProvider } from './tagCompletionProvider';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -158,6 +160,18 @@ export function activate(context: vscode.ExtensionContext) {
 			vscode.window.registerWebviewViewProvider(
 				NotesByTagWebviewProvider.viewType,
 				new NotesByTagWebviewProvider(workspaceFolders[0].uri.fsPath)
+			)
+		);
+
+		// Tag autocomplete
+		const tagCache = new TagCache(workspaceFolders[0].uri.fsPath);
+		tagCache.initialize();
+		context.subscriptions.push(tagCache);
+		context.subscriptions.push(
+			vscode.languages.registerCompletionItemProvider(
+				{ language: 'markdown', scheme: 'file' },
+				new TagCompletionProvider(tagCache),
+				',', ' '
 			)
 		);
 	}
