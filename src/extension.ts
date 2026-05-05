@@ -15,6 +15,7 @@ import { discoverTemplates, loadTemplateContent, expandTemplateVariables } from 
 import { AutoClassifyWatcher } from './autoClassify';
 import { BacklinksWebviewProvider } from './backlinksWebview';
 import { RelatedNotesWebviewProvider } from './relatedNotesWebview';
+import { ChatWebviewProvider } from './chatWebview';
 import { generateSummary } from './summaries';
 import { gatherNotes, searchNotes } from './semanticSearch';
 import { loadCollections, saveCollections, runCollection, Collection } from './smartCollections';
@@ -209,6 +210,15 @@ export function activate(context: vscode.ExtensionContext) {
 			)
 		);
 		context.subscriptions.push(relatedNotesProvider);
+
+		// AI Chat panel
+		const chatProvider = new ChatWebviewProvider(workspaceFolders[0].uri.fsPath);
+		context.subscriptions.push(
+			vscode.window.registerWebviewViewProvider(
+				ChatWebviewProvider.viewType,
+				chatProvider
+			)
+		);
 	}
 
 	// Register the export to PDF command

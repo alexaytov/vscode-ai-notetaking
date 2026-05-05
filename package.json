@@ -48,6 +48,11 @@
           "id": "aiNotesRelatedWebView",
           "name": "AI Notes Related",
           "type": "webview"
+        },
+        {
+          "id": "aiNotesChatWebView",
+          "name": "AI Notes Chat",
+          "type": "webview"
         }
       ]
     },
