@@ -51,6 +51,8 @@ export class TagCache {
         await this.walk(this.workspaceRoot);
     }
 
+    private static readonly EXCLUDED_DIRS = new Set(['.git', 'node_modules', '.vscode', '.claude']);
+
     private async walk(dir: string): Promise<void> {
         let entries;
         try {
@@ -59,6 +61,7 @@ export class TagCache {
         for (const entry of entries) {
             const fullPath = path.join(dir, entry.name);
             if (entry.isDirectory()) {
+                if (TagCache.EXCLUDED_DIRS.has(entry.name)) { continue; }
                 await this.walk(fullPath);
             } else if (entry.name.endsWith('.md')) {
                 await this.indexFile(fullPath);
@@ -81,7 +84,7 @@ export class TagCache {
         await this.fullScan();
     }
 
-    private removeFile(_filePath: string): void {
-        this.fullScan();
+    private async removeFile(_filePath: string): Promise<void> {
+        await this.fullScan();
     }
 }
