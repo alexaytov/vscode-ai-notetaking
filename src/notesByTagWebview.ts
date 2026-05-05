@@ -11,6 +11,7 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'aiNotesByTagWebView';
     private _view?: vscode.WebviewView;
     public onBulkReclassify?: (paths: string[]) => void;
+    public onMergeNotes?: (paths: string[]) => void;
 
     constructor(private workspaceRoot: string) {}
 
@@ -38,6 +39,12 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                 const paths: string[] = message.paths;
                 if (this.onBulkReclassify) {
                     this.onBulkReclassify(paths);
+                }
+            }
+            if (message.command === 'mergeNotes') {
+                const paths: string[] = message.paths;
+                if (this.onMergeNotes) {
+                    this.onMergeNotes(paths);
                 }
             }
         });
@@ -153,6 +160,20 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                 #bulkReclassify:hover {
                     background: var(--vscode-button-hoverBackground);
                 }
+                #mergeSelected {
+                    background: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 10px;
+                    font-size: 0.95em;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                    display: none;
+                }
+                #mergeSelected:hover {
+                    background: var(--vscode-button-hoverBackground);
+                }
                 #selectAll, #deselectAll {
                     background: none;
                     color: var(--vscode-textLink-foreground);
@@ -172,6 +193,7 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                 <button id="bulkReclassify" title="Reclassify selected notes" style="margin-left:8px;">Reclassify Selected (<span id="selCount">0</span>)</button>
                 <button id="selectAll" style="margin-left:4px;">Select All</button>
                 <button id="deselectAll" style="margin-left:2px;">Deselect All</button>
+                <button id="mergeSelected" title="Merge selected notes" style="margin-left:4px;">Merge Selected</button>
             </div>
             <div id="tags-list">
                 ${tags.length === 0 ? '<i>No tags found.</i>' : tags.map(tag => `
@@ -261,6 +283,7 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
                     document.getElementById('bulkReclassify').style.display = count > 0 ? 'inline-block' : 'none';
                     document.getElementById('selectAll').style.display = 'inline-block';
                     document.getElementById('deselectAll').style.display = count > 0 ? 'inline-block' : 'none';
+                    document.getElementById('mergeSelected').style.display = count >= 2 ? 'inline-block' : 'none';
                 }
 
                 document.querySelectorAll('.note-checkbox').forEach(function(cb) {
@@ -301,6 +324,10 @@ export class NotesByTagWebviewProvider implements vscode.WebviewViewProvider {
 
                 document.getElementById('bulkReclassify').addEventListener('click', function() {
                     vscode.postMessage({ command: 'bulkReclassify', paths: Array.from(selectedNotes) });
+                });
+
+                document.getElementById('mergeSelected').addEventListener('click', function() {
+                    vscode.postMessage({ command: 'mergeNotes', paths: Array.from(selectedNotes) });
                 });
 
                 updateSelectionUI();

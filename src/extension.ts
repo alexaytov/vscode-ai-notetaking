@@ -18,6 +18,7 @@ import { RelatedNotesWebviewProvider } from './relatedNotesWebview';
 import { generateSummary } from './summaries';
 import { gatherNotes, searchNotes } from './semanticSearch';
 import { loadCollections, saveCollections, runCollection, Collection } from './smartCollections';
+import { mergeNotes } from './noteMerger';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -146,6 +147,18 @@ export function activate(context: vscode.ExtensionContext) {
 		const notesByTagProvider = new NotesByTagWebviewProvider(workspaceFolders[0].uri.fsPath);
 		notesByTagProvider.onBulkReclassify = (paths) => {
 			bulkReclassifyNotes(paths, workspaceFolders[0].uri.fsPath);
+		};
+		notesByTagProvider.onMergeNotes = async (paths) => {
+			try {
+				const outputPath = await mergeNotes(paths, workspaceFolders[0].uri.fsPath);
+				const uri = vscode.Uri.file(outputPath);
+				await vscode.window.showTextDocument(uri);
+				vscode.window.showInformationMessage(`Merged ${paths.length} notes into new draft.`);
+			} catch (err: any) {
+				if (err.message !== 'Merge cancelled by user.') {
+					vscode.window.showErrorMessage(`Merge failed: ${err.message}`);
+				}
+			}
 		};
 		context.subscriptions.push(
 			vscode.window.registerWebviewViewProvider(
@@ -397,6 +410,48 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
     context.subscriptions.push(smartCollectionsDisposable);
+
+    // Merge notes command
+    const mergeNotesDisposable = vscode.commands.registerCommand('ai-notes.mergeNotes', async () => {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            vscode.window.showErrorMessage('No workspace folder open.');
+            return;
+        }
+        const rootDir = workspaceFolders[0].uri.fsPath;
+
+        const notes = await gatherNotes(rootDir);
+        const items = notes.map(n => ({
+            label: path.basename(n.filePath),
+            description: n.summary || n.snippet.slice(0, 50),
+            detail: n.filePath,
+            picked: false,
+        }));
+
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Select notes to merge (hold Ctrl/Cmd for multiple)',
+            canPickMany: true,
+        });
+        if (!selected || selected.length < 2) {
+            vscode.window.showErrorMessage('Select at least 2 notes to merge.');
+            return;
+        }
+
+        try {
+            const outputPath = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Merging notes...' },
+                () => mergeNotes(selected.map(s => s.detail!), rootDir)
+            );
+            const uri = vscode.Uri.file(outputPath);
+            await vscode.window.showTextDocument(uri);
+            vscode.window.showInformationMessage(`Merged ${selected.length} notes into new draft.`);
+        } catch (err: any) {
+            if (err.message !== 'Merge cancelled by user.') {
+                vscode.window.showErrorMessage(`Merge failed: ${err.message}`);
+            }
+        }
+    });
+    context.subscriptions.push(mergeNotesDisposable);
 }
 
 async function bulkReclassifyNotes(paths: string[], rootDir: string): Promise<void> {

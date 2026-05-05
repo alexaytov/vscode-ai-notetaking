@@ -115,6 +115,10 @@
       {
         "command": "ai-notes.smartCollections",
         "title": "AI Notes: Smart Collections"
+      },
+      {
+        "command": "ai-notes.mergeNotes",
+        "title": "AI Notes: Merge Notes"
       }
     ]
   },
