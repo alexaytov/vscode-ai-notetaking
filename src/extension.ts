@@ -13,6 +13,7 @@ import { TagCache } from './tagCache';
 import { TagCompletionProvider } from './tagCompletionProvider';
 import { discoverTemplates, loadTemplateContent, expandTemplateVariables } from './templates';
 import { AutoClassifyWatcher } from './autoClassify';
+import { BacklinksWebviewProvider } from './backlinksWebview';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -164,6 +165,17 @@ export function activate(context: vscode.ExtensionContext) {
 		});
 		autoClassify.start();
 		context.subscriptions.push(autoClassify);
+
+		// Backlinks panel
+		const backlinksProvider = new BacklinksWebviewProvider(workspaceFolders[0].uri.fsPath);
+		backlinksProvider.initialize();
+		context.subscriptions.push(
+			vscode.window.registerWebviewViewProvider(
+				BacklinksWebviewProvider.viewType,
+				backlinksProvider
+			)
+		);
+		context.subscriptions.push(backlinksProvider);
 	}
 
 	// Register the export to PDF command

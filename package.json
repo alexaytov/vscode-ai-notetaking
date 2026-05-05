@@ -38,6 +38,11 @@
           "id": "aiNotesByTagWebView",
           "name": "AI Notes by Tag",
           "type": "webview"
+        },
+        {
+          "id": "aiNotesBacklinksWebView",
+          "name": "AI Notes Backlinks",
+          "type": "webview"
         }
       ]
     },
