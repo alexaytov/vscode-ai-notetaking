@@ -1,0 +1,87 @@
+code[class*="language-"],
+pre[class*="language-"] {
+    color: var(--color-text-primary);
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 13px;
+    text-align: left;
+    white-space: pre;
+    word-spacing: normal;
+    word-break: normal;
+    word-wrap: normal;
+    line-height: 1.5;
+    tab-size: 4;
+}
+
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata { color: var(--color-text-muted); }
+
+.token.punctuation { color: var(--color-text-secondary); }
+
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol,
+.token.deleted { color: #f97583; }
+
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.char,
+.token.builtin,
+.token.inserted { color: #a5d6ff; }
+
+.token.operator,
+.token.entity,
+.token.url { color: #79c0ff; }
+
+.token.atrule,
+.token.attr-value,
+.token.keyword { color: #ff7b72; }
+
+.token.function,
+.token.class-name { color: #d2a8ff; }
+
+.token.regex,
+.token.important,
+.token.variable { color: #ffa657; }
+
+[data-theme="light"] .token.comment,
+[data-theme="light"] .token.prolog,
+[data-theme="light"] .token.doctype,
+[data-theme="light"] .token.cdata { color: #6a737d; }
+
+[data-theme="light"] .token.punctuation { color: #393a34; }
+
+[data-theme="light"] .token.property,
+[data-theme="light"] .token.tag,
+[data-theme="light"] .token.boolean,
+[data-theme="light"] .token.number,
+[data-theme="light"] .token.constant,
+[data-theme="light"] .token.symbol,
+[data-theme="light"] .token.deleted { color: #cf222e; }
+
+[data-theme="light"] .token.selector,
+[data-theme="light"] .token.attr-name,
+[data-theme="light"] .token.string,
+[data-theme="light"] .token.char,
+[data-theme="light"] .token.builtin,
+[data-theme="light"] .token.inserted { color: #0550ae; }
+
+[data-theme="light"] .token.operator,
+[data-theme="light"] .token.entity,
+[data-theme="light"] .token.url { color: #0969da; }
+
+[data-theme="light"] .token.atrule,
+[data-theme="light"] .token.attr-value,
+[data-theme="light"] .token.keyword { color: #cf222e; }
+
+[data-theme="light"] .token.function,
+[data-theme="light"] .token.class-name { color: #8250df; }
+
+[data-theme="light"] .token.regex,
+[data-theme="light"] .token.important,
+[data-theme="light"] .token.variable { color: #953800; }
