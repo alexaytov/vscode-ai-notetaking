@@ -204,7 +204,7 @@ export function buildPathMap(plan: RestructurePlan, state: VaultState, vaultRoot
         for (const noteRel of state.notes) {
             if (noteRel === op.from + '/' || noteRel.startsWith(fromPrefix)) {
                 const suffix = noteRel.slice(op.from.length);
-                map.set(`${root}/${noteRel}`, `${root}/${op.to}${suffix}`);
+                map.set(path.join(root, noteRel), path.join(root, op.to + suffix));
             }
         }
     }
@@ -216,7 +216,7 @@ export function buildPathMap(plan: RestructurePlan, state: VaultState, vaultRoot
         for (const noteRel of state.notes) {
             if (noteRel.startsWith(fromPrefix)) {
                 const suffix = noteRel.slice(op.from.length); // "/sub/x.md" or "/x.md"
-                map.set(`${root}/${noteRel}`, `${root}/${op.into}${suffix}`);
+                map.set(path.join(root, noteRel), path.join(root, op.into + suffix));
             }
         }
     }
@@ -225,7 +225,7 @@ export function buildPathMap(plan: RestructurePlan, state: VaultState, vaultRoot
     for (const op of plan.operations) {
         if (op.kind !== 'move') { continue; }
         const basename = op.notePath.split('/').pop()!;
-        map.set(`${root}/${op.notePath}`, `${root}/${op.toFolder}/${basename}`);
+        map.set(path.join(root, op.notePath), path.join(root, op.toFolder, basename));
     }
 
     return map;
@@ -302,6 +302,17 @@ async function moveDirectoryContents(srcDir: string, destDir: string): Promise<v
 const OUTPUT_CHANNEL_NAME = 'AI Notes: Restructure';
 let outputChannel: vscode.OutputChannel | undefined;
 
+/**
+ * Disposes the restructure output channel if it was created.
+ * Called by extension deactivation to release resources.
+ */
+export function disposeRestructureOutputChannel(): void {
+    if (outputChannel) {
+        outputChannel.dispose();
+        outputChannel = undefined;
+    }
+}
+
 function log(message: string): void {
     if (!outputChannel) {
         outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
@@ -333,6 +344,9 @@ export async function restructureVault(rootDir: string): Promise<void> {
     }
     const folders = await getAllFolders(rootDir, 5);
     log(`Gathered ${notes.length} notes, ${folders.length} folders.`);
+    if (folders.length === 0 && notes.length > 1) {
+        log('Warning: getAllFolders returned no folders despite having multiple notes. Vault may be flat or partially inaccessible.');
+    }
 
     // 3. Build prompt and call LLM.
     const prompt = buildPrompt(notes, folders);
