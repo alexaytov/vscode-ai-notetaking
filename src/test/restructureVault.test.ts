@@ -75,3 +75,68 @@ suite('validatePlan', () => {
         assert.strictEqual(result.ok, false);
     });
 });
+
+import { gatherNotes, NoteEntry } from '../restructureVault';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as os from 'os';
+
+suite('gatherNotes', () => {
+    test('reads markdown files and parses tags from frontmatter', async () => {
+        const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'aint-'));
+        try {
+            await fs.mkdir(path.join(tmp, 'notes'), { recursive: true });
+            await fs.writeFile(
+                path.join(tmp, 'notes', 'a.md'),
+                '---\ntags: [foo, bar]\n---\nBody A'
+            );
+            await fs.writeFile(
+                path.join(tmp, 'notes', 'b.md'),
+                'No frontmatter, just body B.'
+            );
+            const notes = await gatherNotes(tmp, false);
+            // Sort for deterministic comparison.
+            notes.sort((x, y) => x.relPath.localeCompare(y.relPath));
+            assert.strictEqual(notes.length, 2);
+            assert.strictEqual(notes[0].relPath, 'notes/a.md');
+            assert.deepStrictEqual(notes[0].tags, ['foo', 'bar']);
+            assert.strictEqual(notes[0].title, 'a');
+            assert.strictEqual(notes[1].relPath, 'notes/b.md');
+            assert.deepStrictEqual(notes[1].tags, []);
+        } finally {
+            await fs.rm(tmp, { recursive: true, force: true });
+        }
+    });
+
+    test('includes preview when detailed=true', async () => {
+        const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'aint-'));
+        try {
+            await fs.writeFile(
+                path.join(tmp, 'a.md'),
+                '---\ntags: [t]\n---\nThis is the body content for preview testing.'
+            );
+            const notes = await gatherNotes(tmp, true);
+            assert.strictEqual(notes.length, 1);
+            assert.ok(notes[0].preview);
+            assert.ok(notes[0].preview!.startsWith('This is the body'));
+        } finally {
+            await fs.rm(tmp, { recursive: true, force: true });
+        }
+    });
+
+    test('skips dotfiles and node_modules', async () => {
+        const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'aint-'));
+        try {
+            await fs.mkdir(path.join(tmp, '.hidden'), { recursive: true });
+            await fs.mkdir(path.join(tmp, 'node_modules'), { recursive: true });
+            await fs.writeFile(path.join(tmp, '.hidden', 'a.md'), 'body');
+            await fs.writeFile(path.join(tmp, 'node_modules', 'b.md'), 'body');
+            await fs.writeFile(path.join(tmp, 'real.md'), 'body');
+            const notes = await gatherNotes(tmp, false);
+            assert.strictEqual(notes.length, 1);
+            assert.strictEqual(notes[0].relPath, 'real.md');
+        } finally {
+            await fs.rm(tmp, { recursive: true, force: true });
+        }
+    });
+});
