@@ -145,3 +145,66 @@ function posixRelative(fromDir: string, toAbs: string): string {
     if (segments.length === 0) { return '.'; }
     return segments.join('/');
 }
+
+/**
+ * Walk the vault, rewriting links in every .md file according to pathMap.
+ * Writes back only files that changed. Returns the count of notes that were modified.
+ * Per-file errors are caught and counted in `failures` — they do not abort the sweep.
+ */
+export async function rewriteAllLinks(
+    vaultRoot: string,
+    pathMap: Map<string, string>
+): Promise<{ rewritten: number; failures: { path: string; error: string }[] }> {
+    if (pathMap.size === 0) { return { rewritten: 0, failures: [] }; }
+
+    const failures: { path: string; error: string }[] = [];
+    let rewritten = 0;
+
+    const allMd = await listMarkdownFiles(vaultRoot);
+    for (const absPath of allMd) {
+        try {
+            const content = await fs.readFile(absPath, 'utf8');
+            // Note: absPath is the note's CURRENT (post-move) location.
+            // For link rewriting we need the note's OLD absolute path so relative links resolve.
+            // pathMap maps oldAbs → newAbs. Build a reverse lookup once per call.
+            // For notes that didn't move, their old path == current path.
+            const reverseMap = buildReverseMap(pathMap);
+            const oldAbsPath = reverseMap.get(absPath) ?? absPath;
+            const updated = rewriteLinks(content, oldAbsPath, vaultRoot, pathMap);
+            if (updated !== content) {
+                await fs.writeFile(absPath, updated, 'utf8');
+                rewritten++;
+            }
+        } catch (err: any) {
+            failures.push({ path: absPath, error: err.message ?? String(err) });
+        }
+    }
+    return { rewritten, failures };
+}
+
+async function listMarkdownFiles(root: string): Promise<string[]> {
+    const out: string[] = [];
+    async function walk(dir: string): Promise<void> {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+            if (entry.name.startsWith('.')) { continue; }
+            if (entry.name === 'node_modules') { continue; }
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                await walk(full);
+            } else if (entry.isFile() && entry.name.endsWith('.md')) {
+                out.push(full);
+            }
+        }
+    }
+    await walk(root);
+    return out;
+}
+
+function buildReverseMap(pathMap: Map<string, string>): Map<string, string> {
+    const reverse = new Map<string, string>();
+    for (const [oldAbs, newAbs] of pathMap) {
+        reverse.set(newAbs, oldAbs);
+    }
+    return reverse;
+}
