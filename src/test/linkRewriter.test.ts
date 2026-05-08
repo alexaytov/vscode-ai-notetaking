@@ -58,3 +58,74 @@ suite('linkRewriter wiki-links', () => {
         assert.strictEqual(result, content);
     });
 });
+
+suite('linkRewriter markdown links', () => {
+    test('rewrites relative markdown link when target moved', () => {
+        const pathMap = new Map<string, string>([
+            ['/v/old/foo.md', '/v/new/foo.md'],
+        ]);
+        // Host note did not move; it sits at /v/host.md.
+        // Old link points to /v/old/foo.md — must now point to /v/new/foo.md.
+        const content = 'See [the foo](old/foo.md) for details.';
+        const result = rewriteLinks(content, '/v/host.md', '/v', pathMap);
+        assert.strictEqual(result, 'See [the foo](new/foo.md) for details.');
+    });
+
+    test('preserves anchor fragment when rewriting markdown link', () => {
+        const pathMap = new Map<string, string>([
+            ['/v/old/foo.md', '/v/new/foo.md'],
+        ]);
+        const content = 'See [the foo](old/foo.md#section-2).';
+        const result = rewriteLinks(content, '/v/host.md', '/v', pathMap);
+        assert.strictEqual(result, 'See [the foo](new/foo.md#section-2).');
+    });
+
+    test('recomputes relative path when host note also moved', () => {
+        const pathMap = new Map<string, string>([
+            ['/v/old/foo.md', '/v/new/foo.md'],
+            ['/v/notes/host.md', '/v/archive/host.md'],
+        ]);
+        const content = 'See [foo](../old/foo.md).';
+        // Host moves /v/notes/host.md → /v/archive/host.md.
+        // Target moves /v/old/foo.md → /v/new/foo.md.
+        // New relative path from /v/archive/host.md → /v/new/foo.md is "../new/foo.md".
+        const result = rewriteLinks(content, '/v/notes/host.md', '/v', pathMap);
+        assert.strictEqual(result, 'See [foo](../new/foo.md).');
+    });
+
+    test('leaves absolute URLs unchanged', () => {
+        const pathMap = new Map<string, string>([
+            ['/v/old/foo.md', '/v/new/foo.md'],
+        ]);
+        const content = 'See [external](https://example.com/page).';
+        const result = rewriteLinks(content, '/v/host.md', '/v', pathMap);
+        assert.strictEqual(result, content);
+    });
+
+    test('rewrites image links the same way', () => {
+        const pathMap = new Map<string, string>([
+            ['/v/old/img.png', '/v/new/img.png'],
+        ]);
+        const content = '![alt](old/img.png)';
+        const result = rewriteLinks(content, '/v/host.md', '/v', pathMap);
+        assert.strictEqual(result, '![alt](new/img.png)');
+    });
+
+    test('does not rewrite markdown links inside fenced code', () => {
+        const pathMap = new Map<string, string>([
+            ['/v/old/foo.md', '/v/new/foo.md'],
+        ]);
+        const content = '```\n[x](old/foo.md)\n```';
+        const result = rewriteLinks(content, '/v/host.md', '/v', pathMap);
+        assert.strictEqual(result, content);
+    });
+
+    test('leaves link to file not in pathMap unchanged', () => {
+        const pathMap = new Map<string, string>([
+            ['/v/old/foo.md', '/v/new/foo.md'],
+        ]);
+        const content = 'See [bar](other/bar.md).';
+        const result = rewriteLinks(content, '/v/host.md', '/v', pathMap);
+        assert.strictEqual(result, content);
+    });
+});

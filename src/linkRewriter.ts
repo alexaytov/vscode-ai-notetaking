@@ -34,10 +34,13 @@ export function rewriteLinks(
 
     // Tokenize content into segments where rewriting is allowed vs forbidden (code).
     // Strategy: split on fenced code blocks and inline code, rewrite only the "prose" segments.
+    const noteAbsPosix = norm(noteAbsPath);
     const segments = splitProseAndCode(content);
     const out = segments.map(seg => {
         if (seg.kind === 'code') { return seg.text; }
-        return rewriteWikiLinksInProse(seg.text, basenameToNew);
+        let s = rewriteWikiLinksInProse(seg.text, basenameToNew);
+        s = rewriteMarkdownLinksInProse(s, noteAbsPosix, normalizedMap);
+        return s;
     });
     return out.join('');
 }
@@ -74,4 +77,71 @@ function rewriteWikiLinksInProse(text: string, basenameToNew: Map<string, string
         // (The link still resolves because the basename is unique in the vault.)
         return full;
     });
+}
+
+function rewriteMarkdownLinksInProse(
+    text: string,
+    hostOldAbs: string,
+    pathMap: Map<string, string>
+): string {
+    // Match `[text](target)` and `![alt](target)`. Target may include #anchor.
+    // We deliberately DO NOT match angle-bracket forms `<...>` — keep the regex simple.
+    return text.replace(/(!?)\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (full, bang: string, label: string, target: string) => {
+        // Skip absolute URLs and fragment-only links.
+        if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('#')) { return full; }
+
+        // Split target into path + #anchor.
+        const hashIdx = target.indexOf('#');
+        const rawPath = hashIdx >= 0 ? target.slice(0, hashIdx) : target;
+        const anchor = hashIdx >= 0 ? target.slice(hashIdx) : '';
+
+        // Resolve relative path against the host note's OLD absolute path (so existing links resolve).
+        const hostOldDir = hostOldAbs.split('/').slice(0, -1).join('/');
+        const targetOldAbs = posixResolve(hostOldDir, rawPath);
+
+        const targetNewAbs = pathMap.get(targetOldAbs);
+        // Determine the host's NEW directory: if host moved, use new; else keep old dir.
+        const hostNewAbs = pathMap.get(hostOldAbs) ?? hostOldAbs;
+        const hostNewDir = hostNewAbs.split('/').slice(0, -1).join('/');
+
+        if (!targetNewAbs) {
+            // Target didn't move. If host didn't move either, leave link as-is.
+            if (hostNewDir === hostOldDir) { return full; }
+            // Host moved but target didn't: recompute the relative path from host's new dir.
+            const newRel = posixRelative(hostNewDir, targetOldAbs);
+            return `${bang}[${label}](${newRel}${anchor})`;
+        }
+
+        // Target moved. Recompute relative path from host's (possibly new) dir to target's new path.
+        const newRel = posixRelative(hostNewDir, targetNewAbs);
+        return `${bang}[${label}](${newRel}${anchor})`;
+    });
+}
+
+// POSIX-only path helpers (no Windows backslashes — we normalize at the boundary).
+
+function posixResolve(baseDir: string, rel: string): string {
+    const baseParts = baseDir.split('/').filter(p => p.length > 0);
+    const relParts = rel.split('/');
+    const stack: string[] = baseParts.slice();
+    for (const part of relParts) {
+        if (part === '' || part === '.') { continue; }
+        if (part === '..') { stack.pop(); continue; }
+        stack.push(part);
+    }
+    return '/' + stack.join('/');
+}
+
+function posixRelative(fromDir: string, toAbs: string): string {
+    const fromParts = fromDir.split('/').filter(p => p.length > 0);
+    const toParts = toAbs.split('/').filter(p => p.length > 0);
+    let common = 0;
+    while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) {
+        common++;
+    }
+    const up = fromParts.length - common;
+    const down = toParts.slice(common);
+    const segments = [...Array(up).fill('..'), ...down];
+    if (segments.length === 0) { return '.'; }
+    return segments.join('/');
 }
