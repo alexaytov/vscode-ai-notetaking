@@ -128,4 +128,16 @@ suite('linkRewriter markdown links', () => {
         const result = rewriteLinks(content, '/v/host.md', '/v', pathMap);
         assert.strictEqual(result, content);
     });
+
+    test('rewrites self-referencing markdown link when note moves', () => {
+        const pathMap = new Map<string, string>([
+            ['/v/old/self.md', '/v/new/self.md'],
+        ]);
+        const content = 'See [myself](../old/self.md).';
+        // Host is /v/old/self.md, which is itself moving to /v/new/self.md.
+        // The link target is also /v/old/self.md → /v/new/self.md (same path).
+        // From the new host dir /v/new, the link to /v/new/self.md is just "self.md".
+        const result = rewriteLinks(content, '/v/old/self.md', '/v', pathMap);
+        assert.strictEqual(result, 'See [myself](self.md).');
+    });
 });

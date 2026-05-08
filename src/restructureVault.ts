@@ -18,6 +18,13 @@ export type RestructurePlan = {
     rationale?: string;
 };
 
+/**
+ * Snapshot of the vault's structure at a point in time.
+ * Paths are POSIX-style (forward slashes) regardless of OS — callers must normalize
+ * native separators (e.g., backslashes on Windows) before populating these sets.
+ * `gatherNotes` already returns POSIX paths; `getAllFolders` returns native paths
+ * and must be normalized by `buildVaultState` before being included here.
+ */
 export type VaultState = {
     notes: Set<string>;   // relative paths, forward slashes, e.g. "notes/a.md"
     folders: Set<string>; // relative paths, forward slashes, e.g. "notes/sub"
@@ -57,6 +64,10 @@ export function validatePlan(plan: RestructurePlan, state: VaultState): Validati
                 return { ok: false, error: `Cannot merge '${op.from}' into its own descendant '${op.into}'.` };
             }
         } else if (op.kind === 'move') {
+            // Note: we don't check whether `toFolder` exists — `applyPlan` creates it
+            // via `fs.mkdir({recursive: true})` if it doesn't. Same applies to
+            // `to` in renames and `into` in merges. The validator only ensures
+            // sources are present; destinations are conjured as needed.
             if (!state.notes.has(op.notePath)) {
                 return { ok: false, error: `Note '${op.notePath}' does not exist.` };
             }
@@ -368,7 +379,7 @@ export async function restructureVault(rootDir: string): Promise<void> {
     try {
         plan = parsePlan(response);
     } catch (err: any) {
-        log(`Parse error: ${err.message}\nResponse: ${response}`);
+        log(`Parse error: ${err.message}\nResponse (truncated): ${response.slice(0, 500)}`);
         vscode.window.showErrorMessage(err.message);
         return;
     }
