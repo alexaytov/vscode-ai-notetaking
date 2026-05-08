@@ -161,14 +161,12 @@ export async function rewriteAllLinks(
     let rewritten = 0;
 
     const allMd = await listMarkdownFiles(vaultRoot);
+    // Build reverse map once: pathMap maps oldAbs → newAbs, so reverseMap maps newAbs → oldAbs.
+    // For notes that didn't move, their old path == current path (the ?? fallback below).
+    const reverseMap = buildReverseMap(pathMap);
     for (const absPath of allMd) {
         try {
             const content = await fs.readFile(absPath, 'utf8');
-            // Note: absPath is the note's CURRENT (post-move) location.
-            // For link rewriting we need the note's OLD absolute path so relative links resolve.
-            // pathMap maps oldAbs → newAbs. Build a reverse lookup once per call.
-            // For notes that didn't move, their old path == current path.
-            const reverseMap = buildReverseMap(pathMap);
             const oldAbsPath = reverseMap.get(absPath) ?? absPath;
             const updated = rewriteLinks(content, oldAbsPath, vaultRoot, pathMap);
             if (updated !== content) {
