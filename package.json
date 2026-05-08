@@ -136,6 +136,10 @@
       {
         "command": "ai-notes.exportSite",
         "title": "AI Notes: Export as Static Site"
+      },
+      {
+        "command": "ai-notes.restructureVault",
+        "title": "AI Notes: Restructure Vault"
       }
     ]
   },

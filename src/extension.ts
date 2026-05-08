@@ -23,6 +23,7 @@ import { mergeNotes } from './noteMerger';
 import { generateMOC } from './mocGenerator';
 import { GraphWebviewProvider } from './graphWebview';
 import { exportSite } from './siteExporter';
+import { restructureVault, disposeRestructureOutputChannel } from './restructureVault';
 
 // Helper to format a timestamp as dd-mm-yyyy
 function formatDateDDMMYYYY(timestamp: number): string {
@@ -524,6 +525,22 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
     context.subscriptions.push(exportSiteDisposable);
+
+    // Restructure vault command
+    const restructureVaultDisposable = vscode.commands.registerCommand('ai-notes.restructureVault', async () => {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            vscode.window.showErrorMessage('No workspace folder open.');
+            return;
+        }
+        try {
+            await restructureVault(workspaceFolders[0].uri.fsPath);
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`Restructure failed: ${err.message}`);
+        }
+    });
+    context.subscriptions.push(restructureVaultDisposable);
+    context.subscriptions.push({ dispose: disposeRestructureOutputChannel });
 }
 
 async function bulkReclassifyNotes(paths: string[], rootDir: string): Promise<void> {

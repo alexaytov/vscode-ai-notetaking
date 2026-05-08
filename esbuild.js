@@ -1,9 +1,13 @@
 const esbuild = require('esbuild');
+const { execSync } = require('child_process');
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 
 async function main() {
+    // Compile TypeScript files (including tests)
+    execSync('npx tsc', { stdio: 'inherit' });
+
     const ctx = await esbuild.context({
         entryPoints: ['src/extension.ts'],
         bundle: true,
