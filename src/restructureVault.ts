@@ -184,6 +184,116 @@ ${noteLines}
 Respond with ONLY the JSON object.`;
 }
 
+// ---------- buildPathMap ----------
+
+/**
+ * Compute the absolute oldPath → newPath map for every note affected by `plan`.
+ * Pure: no I/O. Path strings use forward slashes.
+ */
+export function buildPathMap(plan: RestructurePlan, state: VaultState, vaultRoot: string): Map<string, string> {
+    const map = new Map<string, string>();
+    const root = vaultRoot.replace(/\/+$/, '');
+
+    // Renames: every note under `from/` moves to `to/<same-suffix>`.
+    for (const op of plan.operations) {
+        if (op.kind !== 'rename') { continue; }
+        const fromPrefix = op.from + '/';
+        for (const noteRel of state.notes) {
+            if (noteRel === op.from + '/' || noteRel.startsWith(fromPrefix)) {
+                const suffix = noteRel.slice(op.from.length);
+                map.set(`${root}/${noteRel}`, `${root}/${op.to}${suffix}`);
+            }
+        }
+    }
+
+    // Merges: every note directly under `from/` (or any depth) moves to `into/<basename-or-subpath>`.
+    for (const op of plan.operations) {
+        if (op.kind !== 'merge') { continue; }
+        const fromPrefix = op.from + '/';
+        for (const noteRel of state.notes) {
+            if (noteRel.startsWith(fromPrefix)) {
+                const suffix = noteRel.slice(op.from.length); // "/sub/x.md" or "/x.md"
+                map.set(`${root}/${noteRel}`, `${root}/${op.into}${suffix}`);
+            }
+        }
+    }
+
+    // Note moves: explicit single-note relocation, overrides any prior mapping for that note.
+    for (const op of plan.operations) {
+        if (op.kind !== 'move') { continue; }
+        const basename = op.notePath.split('/').pop()!;
+        map.set(`${root}/${op.notePath}`, `${root}/${op.toFolder}/${basename}`);
+    }
+
+    return map;
+}
+
+// ---------- applyPlan ----------
+
+/**
+ * Apply the plan to the filesystem. Caller must have validated the plan first.
+ * Order: folder renames → folder merges → note moves. Stops on first error.
+ * Returns counts and any error encountered.
+ */
+export async function applyPlan(plan: RestructurePlan, vaultRoot: string): Promise<{
+    folderRenames: number;
+    folderMerges: number;
+    noteMoves: number;
+    error?: string;
+}> {
+    let folderRenames = 0;
+    let folderMerges = 0;
+    let noteMoves = 0;
+
+    try {
+        // Phase B(a): folder renames.
+        for (const op of plan.operations) {
+            if (op.kind !== 'rename') { continue; }
+            const fromAbs = path.join(vaultRoot, op.from);
+            const toAbs = path.join(vaultRoot, op.to);
+            await fs.mkdir(path.dirname(toAbs), { recursive: true });
+            await fs.rename(fromAbs, toAbs);
+            folderRenames++;
+        }
+
+        // Phase B(b): folder merges.
+        for (const op of plan.operations) {
+            if (op.kind !== 'merge') { continue; }
+            const fromAbs = path.join(vaultRoot, op.from);
+            const intoAbs = path.join(vaultRoot, op.into);
+            await fs.mkdir(intoAbs, { recursive: true });
+            await moveDirectoryContents(fromAbs, intoAbs);
+            // Remove source folder if it ends up empty.
+            try { await fs.rmdir(fromAbs); } catch { /* not empty — leave it */ }
+            folderMerges++;
+        }
+
+        // Phase B(c): note moves.
+        for (const op of plan.operations) {
+            if (op.kind !== 'move') { continue; }
+            const fromAbs = path.join(vaultRoot, op.notePath);
+            const basename = path.basename(op.notePath);
+            const toAbs = path.join(vaultRoot, op.toFolder, basename);
+            await fs.mkdir(path.dirname(toAbs), { recursive: true });
+            await fs.rename(fromAbs, toAbs);
+            noteMoves++;
+        }
+    } catch (err: any) {
+        return { folderRenames, folderMerges, noteMoves, error: err.message ?? String(err) };
+    }
+
+    return { folderRenames, folderMerges, noteMoves };
+}
+
+async function moveDirectoryContents(srcDir: string, destDir: string): Promise<void> {
+    const entries = await fs.readdir(srcDir, { withFileTypes: true });
+    for (const entry of entries) {
+        const srcPath = path.join(srcDir, entry.name);
+        const destPath = path.join(destDir, entry.name);
+        await fs.rename(srcPath, destPath);
+    }
+}
+
 // ---------- Orchestrator stub (filled in later tasks) ----------
 
 export async function restructureVault(rootDir: string): Promise<void> {

@@ -183,3 +183,47 @@ suite('parsePlan', () => {
         assert.strictEqual(plan.operations[0].kind, 'rename');
     });
 });
+
+import { buildPathMap } from '../restructureVault';
+
+suite('buildPathMap', () => {
+    test('maps a renamed folder\'s notes to new paths', () => {
+        const plan: RestructurePlan = {
+            operations: [{ kind: 'rename', from: 'old', to: 'new' }],
+        };
+        const state: VaultState = {
+            notes: new Set(['old/a.md', 'old/sub/b.md', 'other/c.md']),
+            folders: new Set(['old', 'old/sub', 'other']),
+        };
+        const map = buildPathMap(plan, state, '/v');
+        assert.strictEqual(map.get('/v/old/a.md'), '/v/new/a.md');
+        assert.strictEqual(map.get('/v/old/sub/b.md'), '/v/new/sub/b.md');
+        assert.strictEqual(map.has('/v/other/c.md'), false);
+    });
+
+    test('maps a moved note', () => {
+        const plan: RestructurePlan = {
+            operations: [{ kind: 'move', notePath: 'old/a.md', toFolder: 'new' }],
+        };
+        const state: VaultState = {
+            notes: new Set(['old/a.md']),
+            folders: new Set(['old', 'new']),
+        };
+        const map = buildPathMap(plan, state, '/v');
+        assert.strictEqual(map.get('/v/old/a.md'), '/v/new/a.md');
+    });
+
+    test('maps a folder merge', () => {
+        const plan: RestructurePlan = {
+            operations: [{ kind: 'merge', from: 'a', into: 'b' }],
+        };
+        const state: VaultState = {
+            notes: new Set(['a/x.md', 'a/y.md', 'b/z.md']),
+            folders: new Set(['a', 'b']),
+        };
+        const map = buildPathMap(plan, state, '/v');
+        assert.strictEqual(map.get('/v/a/x.md'), '/v/b/x.md');
+        assert.strictEqual(map.get('/v/a/y.md'), '/v/b/y.md');
+        assert.strictEqual(map.has('/v/b/z.md'), false);
+    });
+});
