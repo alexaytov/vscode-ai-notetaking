@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { chatCompletionWithRetry } from './ai';
+import { getAllFolders } from './files';
+import { rewriteAllLinks } from './linkRewriter';
 
 // ---------- Types ----------
 
@@ -294,8 +297,136 @@ async function moveDirectoryContents(srcDir: string, destDir: string): Promise<v
     }
 }
 
-// ---------- Orchestrator stub (filled in later tasks) ----------
+// ---------- Orchestrator ----------
+
+const OUTPUT_CHANNEL_NAME = 'AI Notes: Restructure';
+let outputChannel: vscode.OutputChannel | undefined;
+
+function log(message: string): void {
+    if (!outputChannel) {
+        outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
+    }
+    outputChannel.appendLine(`[${new Date().toISOString()}] ${message}`);
+}
 
 export async function restructureVault(rootDir: string): Promise<void> {
-    vscode.window.showInformationMessage(`Restructure Vault: not yet implemented (root: ${rootDir})`);
+    // 1. Strategy QuickPick.
+    const strategy = await vscode.window.showQuickPick(
+        [
+            { label: 'Compact', description: 'Titles + tags only — fast' },
+            { label: 'Detailed', description: 'Titles + tags + first 200 chars of body — slower, better quality' },
+        ],
+        { placeHolder: 'Choose context strategy' }
+    );
+    if (!strategy) { return; }
+    const detailed = strategy.label === 'Detailed';
+
+    // 2. Gather notes and folders.
+    const notes = await gatherNotes(rootDir, detailed);
+    if (notes.length === 0) {
+        vscode.window.showInformationMessage('No notes found.');
+        return;
+    }
+    if (notes.length === 1) {
+        vscode.window.showInformationMessage('Need at least 2 notes to restructure.');
+        return;
+    }
+    const folders = await getAllFolders(rootDir, 5);
+    log(`Gathered ${notes.length} notes, ${folders.length} folders.`);
+
+    // 3. Build prompt and call LLM.
+    const prompt = buildPrompt(notes, folders);
+    log(`Prompt size: ${prompt.length} chars (truncated): ${prompt.slice(0, 1000)}`);
+
+    let response: string;
+    try {
+        response = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'Restructure Vault: asking AI...' },
+            () => chatCompletionWithRetry(prompt)
+        );
+    } catch (err: any) {
+        vscode.window.showErrorMessage(`AI request failed: ${err.message}`);
+        return;
+    }
+
+    // 4. Parse and validate.
+    let plan: RestructurePlan;
+    try {
+        plan = parsePlan(response);
+    } catch (err: any) {
+        log(`Parse error: ${err.message}\nResponse: ${response}`);
+        vscode.window.showErrorMessage(err.message);
+        return;
+    }
+    log(`Parsed plan: ${JSON.stringify(plan)}`);
+
+    if (plan.operations.length === 0) {
+        vscode.window.showInformationMessage('Vault structure looks fine — no changes proposed.');
+        return;
+    }
+
+    const state = buildVaultState(notes, folders);
+    const validation = validatePlan(plan, state);
+    if (!validation.ok) {
+        log(`Validation failed: ${validation.error}`);
+        vscode.window.showErrorMessage(`AI proposed an invalid plan: ${validation.error}`);
+        return;
+    }
+
+    // 5. Show summary, ask for confirmation.
+    const summary = summarizePlan(plan);
+    const choice = await vscode.window.showInformationMessage(summary, { modal: true }, 'Apply', 'Cancel');
+    if (choice !== 'Apply') { return; }
+
+    // 6. Apply: build pathMap, do filesystem moves, then rewrite links.
+    const pathMap = buildPathMap(plan, state, rootDir);
+    log(`Built pathMap with ${pathMap.size} entries.`);
+
+    const applyResult = await applyPlan(plan, rootDir);
+    if (applyResult.error) {
+        log(`Apply error after ${applyResult.folderRenames + applyResult.folderMerges + applyResult.noteMoves} ops: ${applyResult.error}`);
+        vscode.window.showErrorMessage(
+            `Restructure partially applied (${applyResult.folderRenames} renames, ${applyResult.folderMerges} merges, ${applyResult.noteMoves} moves) before error: ${applyResult.error}. Links not yet rewritten — please review the vault.`
+        );
+        return;
+    }
+
+    const rewriteResult = await rewriteAllLinks(rootDir, pathMap);
+    log(`Link rewrite: ${rewriteResult.rewritten} notes updated, ${rewriteResult.failures.length} failures.`);
+    for (const f of rewriteResult.failures) { log(`  failure: ${f.path} — ${f.error}`); }
+
+    // 7. Final toast.
+    const failurePart = rewriteResult.failures.length > 0
+        ? `, ${rewriteResult.failures.length} link-rewrite failures (see Output panel)`
+        : '';
+    vscode.window.showInformationMessage(
+        `Restructure done: ${applyResult.folderRenames} folder renames, ${applyResult.folderMerges} folder merges, ${applyResult.noteMoves} notes moved, ${rewriteResult.rewritten} notes had links rewritten${failurePart}.`
+    );
+}
+
+function buildVaultState(notes: NoteEntry[], folders: string[]): VaultState {
+    return {
+        notes: new Set(notes.map(n => n.relPath)),
+        folders: new Set(folders.map(f => f.split(path.sep).join('/'))),
+    };
+}
+
+function summarizePlan(plan: RestructurePlan): string {
+    let renames = 0, merges = 0, moves = 0;
+    for (const op of plan.operations) {
+        if (op.kind === 'rename') { renames++; }
+        else if (op.kind === 'merge') { merges++; }
+        else if (op.kind === 'move') { moves++; }
+    }
+    const lines = [
+        'Proposed changes:',
+        `• ${renames} folder rename${renames === 1 ? '' : 's'}`,
+        `• ${merges} folder merge${merges === 1 ? '' : 's'}`,
+        `• ${moves} note${moves === 1 ? '' : 's'} will move`,
+    ];
+    if (plan.rationale) {
+        lines.push('', `Rationale: ${plan.rationale}`);
+    }
+    lines.push('', 'Apply this plan?');
+    return lines.join('\n');
 }
