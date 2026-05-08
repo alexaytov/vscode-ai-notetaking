@@ -115,6 +115,75 @@ function parseFrontmatter(content: string): { tags: string[]; body: string } {
     return { tags, body };
 }
 
+// ---------- parsePlan ----------
+
+export function parsePlan(response: string): RestructurePlan {
+    // Try direct JSON parse first; on failure, look for the first {...} block.
+    let raw: any;
+    try {
+        raw = JSON.parse(response);
+    } catch {
+        const m = response.match(/\{[\s\S]*\}/);
+        if (!m) { throw new Error('AI response contained no JSON object.'); }
+        raw = JSON.parse(m[0]);
+    }
+    if (!raw || !Array.isArray(raw.operations)) {
+        throw new Error('AI response missing operations array.');
+    }
+    const operations: Operation[] = [];
+    for (const op of raw.operations) {
+        if (!op || typeof op !== 'object') { continue; }
+        if (op.kind === 'rename' && typeof op.from === 'string' && typeof op.to === 'string') {
+            operations.push({ kind: 'rename', from: op.from, to: op.to });
+        } else if (op.kind === 'merge' && typeof op.from === 'string' && typeof op.into === 'string') {
+            operations.push({ kind: 'merge', from: op.from, into: op.into });
+        } else if (op.kind === 'move' && typeof op.notePath === 'string' && typeof op.toFolder === 'string') {
+            operations.push({ kind: 'move', notePath: op.notePath, toFolder: op.toFolder });
+        }
+    }
+    const plan: RestructurePlan = { operations };
+    if (typeof raw.rationale === 'string') { plan.rationale = raw.rationale; }
+    return plan;
+}
+
+// ---------- buildPrompt ----------
+
+export function buildPrompt(notes: NoteEntry[], folders: string[]): string {
+    const noteLines = notes.map(n => {
+        const tags = n.tags.length > 0 ? `tags=[${n.tags.join(', ')}]` : 'tags=[]';
+        const preview = n.preview ? ` preview="${n.preview.replace(/\n/g, ' ').replace(/"/g, "'").slice(0, 200)}"` : '';
+        return `- ${n.relPath} ${tags}${preview}`;
+    }).join('\n');
+
+    const folderLines = folders.map(f => `- ${f}`).join('\n');
+
+    return `You are reorganizing a markdown notes vault. Refine the existing folder structure conservatively.
+
+Rules:
+- Propose changes ONLY when they materially improve organization.
+- Do not invent folders for fewer than 2 notes.
+- Do not move a note that is already in a sensible folder.
+- Output strict JSON matching the schema below — no prose outside the JSON.
+
+Allowed operation kinds:
+- {"kind":"rename","from":"<existing folder>","to":"<new folder>"}
+- {"kind":"merge","from":"<existing folder>","into":"<existing folder>"}
+- {"kind":"move","notePath":"<existing note path>","toFolder":"<destination folder>"}
+
+All paths are relative to the vault root and use forward slashes.
+
+Schema:
+{"operations":[...], "rationale":"<one-paragraph explanation>"}
+
+Current folders:
+${folderLines}
+
+Current notes:
+${noteLines}
+
+Respond with ONLY the JSON object.`;
+}
+
 // ---------- Orchestrator stub (filled in later tasks) ----------
 
 export async function restructureVault(rootDir: string): Promise<void> {

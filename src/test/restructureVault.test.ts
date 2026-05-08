@@ -140,3 +140,46 @@ suite('gatherNotes', () => {
         }
     });
 });
+
+import { parsePlan } from '../restructureVault';
+
+suite('parsePlan', () => {
+    test('parses well-formed JSON response', () => {
+        const response = JSON.stringify({
+            operations: [
+                { kind: 'rename', from: 'a', to: 'b' },
+                { kind: 'move', notePath: 'a/x.md', toFolder: 'b' },
+            ],
+            rationale: 'tighter naming',
+        });
+        const plan = parsePlan(response);
+        assert.strictEqual(plan.operations.length, 2);
+        assert.strictEqual(plan.rationale, 'tighter naming');
+    });
+
+    test('extracts JSON from a response with surrounding text', () => {
+        const response = 'Here is the plan:\n```json\n{"operations":[]}\n```\nThanks.';
+        const plan = parsePlan(response);
+        assert.strictEqual(plan.operations.length, 0);
+    });
+
+    test('throws on response with no JSON object', () => {
+        assert.throws(() => parsePlan('just text, no json'));
+    });
+
+    test('throws on JSON missing operations array', () => {
+        assert.throws(() => parsePlan('{"foo":"bar"}'));
+    });
+
+    test('filters operations with unknown kind', () => {
+        const response = JSON.stringify({
+            operations: [
+                { kind: 'rename', from: 'a', to: 'b' },
+                { kind: 'delete', path: 'a/x.md' },
+            ],
+        });
+        const plan = parsePlan(response);
+        assert.strictEqual(plan.operations.length, 1);
+        assert.strictEqual(plan.operations[0].kind, 'rename');
+    });
+});
