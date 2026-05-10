@@ -4,7 +4,7 @@
   "publisher": "Aleksandar-Aytov",
   "icon": "images/icon.png",
   "description": "A VS Code extension for AI-assisted note-taking, organization, and PDF export.",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "repository": "https://github.com/alexaytov/vscode-ai-notetaking",
   "engines": {
     "vscode": "^1.100.0"
