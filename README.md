@@ -1,10 +1,19 @@
 # Quickstart
 
-To quickly install the latest version of AI Notes in VS Code, run the following commands in your terminal:
+**Stop wrestling with your notes. Let AI Notes file them for you.**
+
+Smart tags, sensible names, and the right folder — proposed by AI, applied with one keystroke. Markdown stays portable. Your vault stays yours.
+
+- 🤖 Auto-tag, auto-name, auto-file new notes
+- 🧹 Restructure your whole vault with one command
+- 🔍 Semantic search, smart collections, knowledge graph
+- 📄 Export to PDF or a polished static site
+
+Install it now:
 
 ```sh
-curl -L -o ai-notes-0.0.3.vsix https://github.com/alexaytov/vscode-ai-notetaking/releases/download/0.0.3/ai-notes-0.0.3.vsix
-code --install-extension ai-notes-0.0.3.vsix
+curl -L -o ai-notes-0.0.7.vsix https://github.com/alexaytov/vscode-ai-notetaking/releases/download/0.0.7/ai-notes-0.0.7.vsix
+code --install-extension ai-notes-0.0.7.vsix
 ```
 
 # AI Notes
