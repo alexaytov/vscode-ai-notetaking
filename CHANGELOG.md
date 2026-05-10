@@ -4,6 +4,12 @@ All notable changes to the "ai-notes" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.10] - 2026-05-10
+
+### Fixed
+
+- **Restructure Vault: order-aware plan validation.** Previously, a plan with two ops where op 2 referenced a path that op 1 had moved (e.g., merge a parent folder, then merge its former child) would pass validation and fail mid-apply with `ENOENT`. The validator now simulates each op against a mutating state copy, so order-dependent failures are caught up front and the whole plan is rejected with a clear "does not exist" message.
+
 ## [0.0.9] - 2026-05-10
 
 ### Fixed
