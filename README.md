@@ -12,8 +12,8 @@ Smart tags, sensible names, and the right folder — proposed by AI, applied wit
 Install it now:
 
 ```sh
-curl -L -o ai-notes-0.0.7.vsix https://github.com/alexaytov/vscode-ai-notetaking/releases/download/0.0.7/ai-notes-0.0.7.vsix
-code --install-extension ai-notes-0.0.7.vsix
+curl -L -o ai-notes-0.0.8.vsix https://github.com/alexaytov/vscode-ai-notetaking/releases/download/0.0.8/ai-notes-0.0.8.vsix
+code --install-extension ai-notes-0.0.8.vsix
 ```
 
 # AI Notes

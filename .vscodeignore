@@ -11,3 +11,7 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 esbuild.js
+.superpowers/**
+*.vsix
+.DS_Store
+**/.DS_Store
