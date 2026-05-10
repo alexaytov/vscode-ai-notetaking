@@ -55,6 +55,9 @@ export function validatePlan(plan: RestructurePlan, state: VaultState): Validati
             if (op.to.startsWith(op.from + '/')) {
                 return { ok: false, error: `Cannot rename '${op.from}' into its own descendant '${op.to}'.` };
             }
+            if (state.folders.has(op.to)) {
+                return { ok: false, error: `Cannot rename '${op.from}' to '${op.to}' because that folder already exists. Use a 'merge' operation to combine folders.` };
+            }
             destinations.push(op.to);
         } else if (op.kind === 'merge') {
             if (!state.folders.has(op.from)) {
@@ -177,6 +180,7 @@ Rules:
 - Propose changes ONLY when they materially improve organization.
 - Do not invent folders for fewer than 2 notes.
 - Do not move a note that is already in a sensible folder.
+- Use a 'merge' operation, NOT 'rename', when the target folder already exists in the current folder list.
 - Output strict JSON matching the schema below — no prose outside the JSON.
 
 Allowed operation kinds:
@@ -409,10 +413,15 @@ export async function restructureVault(rootDir: string): Promise<void> {
 
     const applyResult = await applyPlan(plan, rootDir);
     if (applyResult.error) {
-        log(`Apply error after ${applyResult.folderRenames + applyResult.folderMerges + applyResult.noteMoves} ops: ${applyResult.error}`);
-        vscode.window.showErrorMessage(
-            `Restructure partially applied (${applyResult.folderRenames} renames, ${applyResult.folderMerges} merges, ${applyResult.noteMoves} moves) before error: ${applyResult.error}. Links not yet rewritten — please review the vault.`
-        );
+        const totalApplied = applyResult.folderRenames + applyResult.folderMerges + applyResult.noteMoves;
+        log(`Apply error after ${totalApplied} ops: ${applyResult.error}`);
+        const stateMsg = totalApplied === 0
+            ? 'No operations applied'
+            : `Restructure partially applied (${applyResult.folderRenames} renames, ${applyResult.folderMerges} merges, ${applyResult.noteMoves} moves)`;
+        const linksMsg = totalApplied === 0
+            ? ''
+            : ' Links not yet rewritten — please review the vault.';
+        vscode.window.showErrorMessage(`${stateMsg} before error: ${applyResult.error}.${linksMsg}`);
         return;
     }
 

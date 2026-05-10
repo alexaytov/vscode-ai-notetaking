@@ -74,6 +74,19 @@ suite('validatePlan', () => {
         const result = validatePlan(plan, baseState);
         assert.strictEqual(result.ok, false);
     });
+
+    test('rejects rename whose target folder already exists', () => {
+        const stateWithCollision: VaultState = {
+            notes: new Set(['a/x.md', 'b/y.md']),
+            folders: new Set(['a', 'b']),
+        };
+        const plan: RestructurePlan = {
+            operations: [{ kind: 'rename', from: 'a', to: 'b' }],
+        };
+        const result = validatePlan(plan, stateWithCollision);
+        assert.strictEqual(result.ok, false);
+        assert.match(result.error!, /already exists|merge/i);
+    });
 });
 
 import { gatherNotes, NoteEntry } from '../restructureVault';
