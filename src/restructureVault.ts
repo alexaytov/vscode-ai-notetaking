@@ -43,10 +43,14 @@ export type NoteEntry = {
 
 export function validatePlan(plan: RestructurePlan, state: VaultState): ValidationResult {
     const destinations: string[] = [];
+    // Walk a simulated copy of the state. Each op is validated against the post-previous-op
+    // state, so order-dependent failures (e.g., op 2 references a path op 1 moved) are
+    // caught here rather than mid-apply.
+    let simState = state;
 
     for (const op of plan.operations) {
         if (op.kind === 'rename') {
-            if (!state.folders.has(op.from)) {
+            if (!simState.folders.has(op.from)) {
                 return { ok: false, error: `Folder '${op.from}' does not exist.` };
             }
             if (op.to === op.from) {
@@ -55,12 +59,12 @@ export function validatePlan(plan: RestructurePlan, state: VaultState): Validati
             if (op.to.startsWith(op.from + '/')) {
                 return { ok: false, error: `Cannot rename '${op.from}' into its own descendant '${op.to}'.` };
             }
-            if (state.folders.has(op.to)) {
+            if (simState.folders.has(op.to)) {
                 return { ok: false, error: `Cannot rename '${op.from}' to '${op.to}' because that folder already exists. Use a 'merge' operation to combine folders.` };
             }
             destinations.push(op.to);
         } else if (op.kind === 'merge') {
-            if (!state.folders.has(op.from)) {
+            if (!simState.folders.has(op.from)) {
                 return { ok: false, error: `Merge source folder '${op.from}' does not exist.` };
             }
             if (op.into.startsWith(op.from + '/')) {
@@ -71,10 +75,13 @@ export function validatePlan(plan: RestructurePlan, state: VaultState): Validati
             // via `fs.mkdir({recursive: true})` if it doesn't. Same applies to
             // `to` in renames and `into` in merges. The validator only ensures
             // sources are present; destinations are conjured as needed.
-            if (!state.notes.has(op.notePath)) {
+            if (!simState.notes.has(op.notePath)) {
                 return { ok: false, error: `Note '${op.notePath}' does not exist.` };
             }
         }
+
+        // Advance the simulated state for the next op's checks.
+        simState = simulateOp(simState, op);
     }
 
     // Duplicate destinations check (ignoring merge-into, since multiple merges into the same target are valid).
@@ -87,6 +94,73 @@ export function validatePlan(plan: RestructurePlan, state: VaultState): Validati
     }
 
     return { ok: true };
+}
+
+/**
+ * Apply the effects of `op` to `state`, returning a new VaultState reflecting
+ * the post-op vault. Used by validatePlan to simulate plan execution and detect
+ * order-dependent problems (e.g., op 2 references a path op 1 moved away).
+ *
+ * Caller must have already checked that `op`'s source paths exist in `state`.
+ */
+function simulateOp(state: VaultState, op: Operation): VaultState {
+    const notes = new Set(state.notes);
+    const folders = new Set(state.folders);
+
+    if (op.kind === 'rename') {
+        // Move every folder and note under `from` to `to`.
+        const fromPrefix = op.from + '/';
+        // Folders
+        for (const folder of state.folders) {
+            if (folder === op.from) {
+                folders.delete(folder);
+                folders.add(op.to);
+            } else if (folder.startsWith(fromPrefix)) {
+                folders.delete(folder);
+                folders.add(op.to + folder.slice(op.from.length));
+            }
+        }
+        // Notes
+        for (const note of state.notes) {
+            if (note.startsWith(fromPrefix)) {
+                notes.delete(note);
+                notes.add(op.to + note.slice(op.from.length));
+            }
+        }
+    } else if (op.kind === 'merge') {
+        // Move every folder and note under `from/` into `into/<same-suffix>`.
+        // The `from` folder itself is removed (assumed empty after merging out).
+        const fromPrefix = op.from + '/';
+        // Folders
+        for (const folder of state.folders) {
+            if (folder === op.from) {
+                folders.delete(folder);
+            } else if (folder.startsWith(fromPrefix)) {
+                folders.delete(folder);
+                const suffix = folder.slice(op.from.length); // "/sub"
+                folders.add(op.into + suffix);
+            }
+        }
+        // Ensure `into` exists in the folders set.
+        folders.add(op.into);
+        // Notes
+        for (const note of state.notes) {
+            if (note.startsWith(fromPrefix)) {
+                notes.delete(note);
+                const suffix = note.slice(op.from.length); // "/x.md" or "/sub/x.md"
+                notes.add(op.into + suffix);
+            }
+        }
+    } else if (op.kind === 'move') {
+        // Move just the one note.
+        notes.delete(op.notePath);
+        const basename = op.notePath.split('/').pop()!;
+        notes.add(`${op.toFolder}/${basename}`);
+        // Ensure destination folder exists.
+        folders.add(op.toFolder);
+    }
+
+    return { notes, folders };
 }
 
 // ---------- gatherNotes ----------

@@ -51,7 +51,8 @@ suite('validatePlan', () => {
         };
         const result = validatePlan(plan, baseState);
         assert.strictEqual(result.ok, false);
-        assert.match(result.error!, /conflicting|duplicate|same destination/i);
+        // After simulating op 1, 'merged' exists, so op 2 triggers the "already exists" error.
+        assert.match(result.error!, /conflicting|duplicate|same destination|already exists/i);
     });
 
     test('rejects renaming a folder into one of its own descendants', () => {
@@ -86,6 +87,55 @@ suite('validatePlan', () => {
         const result = validatePlan(plan, stateWithCollision);
         assert.strictEqual(result.ok, false);
         assert.match(result.error!, /already exists|merge/i);
+    });
+
+    test('rejects plan where second merge references path moved by first merge', () => {
+        // Repro of real-vault bug: merge parent then try to merge a former child of that parent.
+        const stateNested: VaultState = {
+            notes: new Set(['notes/game development/design guidelines/x.md']),
+            folders: new Set(['notes', 'notes/game development', 'notes/game development/design guidelines', 'notes/game-development', 'notes/game-development/design-guidelines']),
+        };
+        const plan: RestructurePlan = {
+            operations: [
+                { kind: 'merge', from: 'notes/game development', into: 'notes/game-development' },
+                { kind: 'merge', from: 'notes/game development/design guidelines', into: 'notes/game-development/design-guidelines' },
+            ],
+        };
+        const result = validatePlan(plan, stateNested);
+        assert.strictEqual(result.ok, false);
+        assert.match(result.error!, /does not exist/i);
+    });
+
+    test('rejects plan where second rename references path moved by first rename', () => {
+        const stateNested: VaultState = {
+            notes: new Set(['a/sub/x.md']),
+            folders: new Set(['a', 'a/sub']),
+        };
+        const plan: RestructurePlan = {
+            operations: [
+                { kind: 'rename', from: 'a', to: 'b' },
+                { kind: 'rename', from: 'a/sub', to: 'c' },
+            ],
+        };
+        const result = validatePlan(plan, stateNested);
+        assert.strictEqual(result.ok, false);
+        assert.match(result.error!, /does not exist/i);
+    });
+
+    test('accepts plan where second op references path moved INTO existence by first op', () => {
+        // Op 1 renames 'a' to 'newName'. Op 2 should be allowed to reference 'newName'.
+        const stateMixed: VaultState = {
+            notes: new Set(['a/x.md', 'other/y.md']),
+            folders: new Set(['a', 'other']),
+        };
+        const plan: RestructurePlan = {
+            operations: [
+                { kind: 'rename', from: 'a', to: 'newName' },
+                { kind: 'move', notePath: 'other/y.md', toFolder: 'newName' },
+            ],
+        };
+        const result = validatePlan(plan, stateMixed);
+        assert.strictEqual(result.ok, true);
     });
 });
 
